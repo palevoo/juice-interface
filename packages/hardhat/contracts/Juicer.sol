@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.8.0;
+pragma solidity >=0.8.5;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
@@ -643,8 +643,30 @@ contract Juicer is Operatable, IJuicer, ITerminal, ReentrancyGuard {
         _ensureAvailability(_transferAmount);
 
         // Get a reference to the leftover transfer amount after all mods have been paid.
-        uint256 _leftoverTransferAmount = _transferAmount;
+        uint256 _leftoverTransferAmount =
+            _payMods(_fundingCycle, _transferAmount);
 
+        // Transfer any remaining balance to the beneficiary.
+        if (_leftoverTransferAmount > 0)
+            Address.sendValue(_projectOwner, _leftoverTransferAmount);
+
+        emit Tap(
+            _fundingCycle.id,
+            _fundingCycle.projectId,
+            _projectOwner,
+            _amount,
+            _fundingCycle.currency,
+            _transferAmount,
+            _leftoverTransferAmount,
+            _govFeeAmount,
+            msg.sender
+        );
+    }
+
+    function _payMods(FundingCycle memory _fundingCycle, uint256 _totalAmount)
+        private
+        returns (uint256 leftoverAmount)
+    {
         // Get a reference to the project's payment mods.
         PaymentMod[] memory _mods =
             modStore.paymentModsOf(
@@ -658,7 +680,7 @@ contract Juicer is Operatable, IJuicer, ITerminal, ReentrancyGuard {
             PaymentMod memory _mod = _mods[_i];
             // The amount to send towards mods.
             uint256 _modCut =
-                PRBMathCommon.mulDiv(_transferAmount, _mod.percent, 200);
+                PRBMathCommon.mulDiv(_totalAmount, _mod.percent, 200);
 
             // Transfer ETH to the mod.
             // If there's an allocator set, transfer to its `allocate` function.
@@ -681,20 +703,30 @@ contract Juicer is Operatable, IJuicer, ITerminal, ReentrancyGuard {
                     "Juicer::tap: BAD_MOD"
                 );
 
+                // Make a memo to add to the payment.
+                string memory _memo =
+                    string(
+                        bytes.concat(
+                            bytes("Payment from @"),
+                            projects.handleOf(_fundingCycle.projectId)
+                        )
+                    );
+
                 // Save gas if this terminal is being used.
                 if (_terminal == this) {
+                    // Get the handle of the project sending the mod payment.
                     _pay(
-                        _mod.projectId,
+                        _fundingCycle.projectId,
                         _modCut,
                         _mod.beneficiary,
-                        _mod.memo,
+                        _memo,
                         _mod.preferUnstaked
                     );
                 } else {
                     _terminal.pay{value: _modCut}(
                         _mod.projectId,
                         _mod.beneficiary,
-                        _mod.memo,
+                        _memo,
                         _mod.preferUnstaked
                     );
                 }
@@ -704,7 +736,7 @@ contract Juicer is Operatable, IJuicer, ITerminal, ReentrancyGuard {
             }
 
             // Subtract from the amount to be sent to the beneficiary.
-            _leftoverTransferAmount = _leftoverTransferAmount - _modCut;
+            leftoverAmount = leftoverAmount - _modCut;
 
             emit PaymentModDistribution(
                 _fundingCycle.id,
@@ -714,22 +746,6 @@ contract Juicer is Operatable, IJuicer, ITerminal, ReentrancyGuard {
                 msg.sender
             );
         }
-
-        // Transfer any remaining balance to the beneficiary.
-        if (_leftoverTransferAmount > 0)
-            Address.sendValue(_projectOwner, _leftoverTransferAmount);
-
-        emit Tap(
-            _fundingCycle.id,
-            _fundingCycle.projectId,
-            _projectOwner,
-            _amount,
-            _fundingCycle.currency,
-            _transferAmount,
-            _leftoverTransferAmount,
-            _govFeeAmount,
-            msg.sender
-        );
     }
 
     /**
