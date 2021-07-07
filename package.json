@@ -15,6 +15,7 @@
     "app:test": "yarn workspace @juice.work/app test",
     "start": "yarn workspace @juice.work/app start",
     "chain": "yarn workspace @juice.work/hardhat chain",
+    "coverage": "yarn workspace @juice.work/hardhat coverage",
     "test": "yarn workspace @juice.work/hardhat test",
     "test:unit": "yarn workspace @juice.work/hardhat test:unit",
     "test:integration": "yarn workspace @juice.work/hardhat test:integration",
