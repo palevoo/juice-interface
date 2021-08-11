@@ -9,6 +9,10 @@ import "./abstract/JuiceboxProject.sol";
 contract Governance is JuiceboxProject {
     // --- external transactions --- //
 
+    /** 
+      @param _projectId The ID of the Juicebox project being governed.
+      @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
+    */
     constructor(uint256 _projectId, ITerminalDirectory _terminalDirectory)
         JuiceboxProject(_projectId, _terminalDirectory)
     {}

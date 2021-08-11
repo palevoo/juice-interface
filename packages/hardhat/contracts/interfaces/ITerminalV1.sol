@@ -35,6 +35,7 @@ interface ITerminalV1 {
         uint256 govFeeAmount,
         address caller
     );
+
     event Redeem(
         address indexed holder,
         address indexed beneficiary,
@@ -60,6 +61,7 @@ interface ITerminalV1 {
         uint256 modCut,
         address caller
     );
+
     event DistributeToTicketMod(
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
@@ -67,6 +69,7 @@ interface ITerminalV1 {
         uint256 modCut,
         address caller
     );
+
     event AppointGovernance(address governance);
 
     event AcceptGovernance(address governance);
@@ -82,13 +85,7 @@ interface ITerminalV1 {
 
     event Deposit(uint256 amount);
 
-    event EnsureTargetLocalWei(uint256 target);
-
-    event SetYielder(IYielder newYielder);
-
     event SetFee(uint256 _amount);
-
-    event SetTargetLocalWei(uint256 amount);
 
     function governance() external view returns (address payable);
 

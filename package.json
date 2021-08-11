@@ -78,9 +78,11 @@
   },
   "devDependencies": {
     "husky": "^4.3.7",
-    "pretty-quick": "^3.1.0"
+    "pretty-quick": "^3.1.0",
+    "solc-0.7": "npm:solc@^0.8.6"
   },
   "dependencies": {
-    "bip39": "^3.0.4"
+    "bip39": "^3.0.4",
+    "solidity-docgen": "^0.5.13"
   }
 }

@@ -72,7 +72,7 @@ contract TerminalV1 is Operatable, ITerminalV1, ITerminal, ReentrancyGuard {
 
     // --- public stored properties --- //
 
-    /// @notice The amount of ETH that each project is responsible for.
+    /// @notice The amount of ETH that each project has.
     mapping(uint256 => uint256) public override balanceOf;
 
     /// @notice The percent fee the Juicebox project takes from tapped amounts. Out of 200.
@@ -382,11 +382,10 @@ contract TerminalV1 is Operatable, ITerminalV1, ITerminal, ReentrancyGuard {
           If the number is 0, an non-recurring funding stage will get made.
         @dev _properties.ballot The new ballot that will be used to approve subsequent reconfigurations.
       @param _metadata A struct specifying the TerminalV1 specific params _bondingCurveRate, and _reservedRate.
+        @dev _metadata.reservedRate A number from 0-200 indicating the percentage of each contribution's tickets that will be reserved for the project owner.
         @dev _metadata.bondingCurveRate The rate from 0-200 at which a project's Tickets can be redeemed for surplus.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
-        @dev _metadata.reservedRate A number from 0-200 indicating the percentage of each contribution's tickets that will be reserved for the project owner.
-        @dev _metadata.bondingCurveRate The rate from 0-200 at which a project's Tickets can be redeemed for surplus.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
 
       @return The ID of the funding cycle that was successfully configured.
