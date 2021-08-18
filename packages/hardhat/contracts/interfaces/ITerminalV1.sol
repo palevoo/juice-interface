@@ -38,7 +38,7 @@ interface ITerminalV1 {
     event Redeem(
         address indexed holder,
         address indexed beneficiary,
-        uint256 indexed _projectId,
+        uint256 indexed projectId,
         uint256 amount,
         uint256 returnAmount,
         address caller
