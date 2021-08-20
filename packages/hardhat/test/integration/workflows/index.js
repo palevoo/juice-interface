@@ -6,6 +6,8 @@ const setTicketMods = require("./set_ticket_mods");
 const tap = require("./tap");
 const redeem = require("./redeem");
 const printReservedTickets = require("./print_reserved_tickets");
+const printReservedTicketsFromZeroToFull = require("./print_reserved_tickets_from_zero_to_full");
+const printReservedTicketsCanChangeOncePrinted = require("./print_reserved_tickets_can_change_once_printed");
 const issueTickets = require("./issue_tickets");
 const reconfigure = require("./reconfigure");
 const approvedBallot = require("./approved_ballot");
@@ -58,4 +60,6 @@ module.exports = {
   challengeHandle,
   takeFee,
   proxyPaymentAddresses,
+  printReservedTicketsFromZeroToFull,
+  printReservedTicketsCanChangeOncePrinted
 };

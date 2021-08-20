@@ -345,6 +345,27 @@ module.exports = [
       })
   },
   {
+    description: "There still shouldn't be any reserved tickets",
+    fn: ({
+      constants,
+      contracts,
+      checkFn,
+      randomBigNumberFn,
+      randomSignerFn,
+      local: { expectedProjectId }
+    }) =>
+      checkFn({
+        caller: randomSignerFn(),
+        contract: contracts.terminalV1,
+        fn: "reservedTicketBalanceOf",
+        args: [
+          expectedProjectId,
+          randomBigNumberFn({ max: constants.MaxPercent })
+        ],
+        expect: 0
+      })
+  },
+  {
     description:
       "Printing reserved before anything has been done shouldn't do anything",
     fn: ({ contracts, executeFn, local: { expectedProjectId, owner } }) =>
@@ -423,6 +444,8 @@ module.exports = [
       randomSignerFn,
       local: { expectedProjectId, reservedRate, paymentValue2 }
     }) => {
+      console.log({ paymentValue2 });
+      console.log({ reservedRate });
       // The expected number of reserved tickets to expect from the first payment.
       const expectedReservedTicketAmount2 = paymentValue2
         .mul(constants.InitialWeightMultiplier)
