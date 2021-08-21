@@ -559,15 +559,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         );
 
         // Set the preconfigure tickets as processed so that reserved tickets cant be minted against them.
-        // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-        // require(
-        //     _processedTicketTrackerOf[_projectId] < 0 ||
-        //         uint256(_processedTicketTrackerOf[_projectId]) +
-        //             uint256(_weightedAmount) <=
-        //         uint256(type(int256).max),
-        //     "TerminalV2::printTickets: INT_LIMIT_REACHED"
-        // );
-
         _processedTicketTrackerOf[_projectId] =
             _processedTicketTrackerOf[_projectId] +
             int256(_weightedAmount);
@@ -890,11 +881,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             balanceOf[_projectId] == 0 &&
             _processedTicketTrackerOf[_projectId] == 0
         )
-            // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-            // require(
-            //     _totalSupply <= uint256(type(int256).max),
-            //     "TerminalV2::printReservedTickets: INT_LIMIT_REACHED"
-            // );
             // Set the tracker to be the new total supply.
             _processedTicketTrackerOf[_projectId] = int256(
                 ticketBooth.totalSupplyOf(_projectId)
@@ -1038,12 +1024,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             uint256(uint8(_fundingCycle.metadata >> 8)),
             _totalTickets
         );
-
-        // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-        // require(
-        //     _totalTickets + amount <= uint256(type(int256).max),
-        //     "TerminalV2::printReservedTickets: INT_LIMIT_REACHED"
-        // );
 
         // Set the tracker to be the new total supply.
         _processedTicketTrackerOf[_projectId] = int256(_totalTickets + amount);
@@ -1282,14 +1262,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             // If there's no funding cycle, track this payment as having been made before a configuration.
             if (_fundingCycle.number == 0) {
                 // Mark the premined tickets as processed so that reserved tickets can't later be printed against them.
-                // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-                // require(
-                //     _processedTicketTrackerOf[_projectId] < 0 ||
-                //         uint256(_processedTicketTrackerOf[_projectId]) +
-                //             uint256(_weightedAmount) <=
-                //         uint256(type(int256).max),
-                //     "TerminalV2::printTickets: INT_LIMIT_REACHED"
-                // );
                 _processedTicketTrackerOf[_projectId] =
                     _processedTicketTrackerOf[_projectId] +
                     int256(_unreservedWeightedAmount);
@@ -1312,14 +1284,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             // the full weighted amount should be explicitly tracked as reserved since no unreserved tickets were printed.
 
             // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
-            // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-            // require(
-            //     _processedTicketTrackerOf[_projectId] > 0 ||
-            //         uint256(-_processedTicketTrackerOf[_projectId]) +
-            //             uint256(_weightedAmount) <=
-            //         uint256(type(int256).max),
-            //     "TerminalV2::printTickets: INT_LIMIT_REACHED"
-            // );
             _processedTicketTrackerOf[_projectId] =
                 _processedTicketTrackerOf[_projectId] -
                 int256(_weightedAmount);
