@@ -13,10 +13,6 @@ import "./abstract/Operatable.sol";
 
 import "./libraries/Operations.sol";
 
-import "./interfaces/ITerminalV1.sol";
-
-import "./TerminalV1.sol";
-
 /**
   ─────────────────────────────────────────────────────────────────────────────────────────────────
   ─────────██████──███████──██████──██████████──██████████████──██████████████──████████████████───
@@ -74,7 +70,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     /// @notice The directory of terminals.
     ITerminalDirectory public immutable override terminalDirectory;
 
-    ITerminalV1 public immutable override terminalV1;
+    /// @notice The contract that stores each project's configured max supply of tickets.
+    IMaxTicketSupplyStore public immutable override maxTicketSupplyStore;
 
     // --- public stored properties --- //
 
@@ -92,9 +89,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
     // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
     mapping(ITerminal => bool) public override migrationIsAllowed;
-
-    // Tracks how much funding cycles with strict targets have received.
-    mapping(uint256 => uint256) public override strictTargetTracker;
 
     // --- external views --- //
 
@@ -206,8 +200,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Use the reconfiguration bonding curve if the queued cycle is pending approval according to the previous funding cycle's ballot.
         uint256 _bondingCurveRate = fundingCycles.currentBallotStateOf(
             _projectId
-        ) == BallotState.Active // The reconfiguration bonding curve rate is stored in bytes 24-31 of the metadata property.
-            ? uint256(uint8(_fundingCycle.metadata >> 24)) // The bonding curve rate is stored in bytes 16-23 of the data property after.
+        ) == BallotState.Active // The reconfiguration bonding curve rate is stored in bits 24-31 of the metadata property.
+            ? uint256(uint8(_fundingCycle.metadata >> 24)) // The bonding curve rate is stored in bits 16-23 of the data property after.
             : uint256(uint8(_fundingCycle.metadata >> 16));
 
         // The bonding curve formula.
@@ -260,23 +254,45 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     // --- external transactions --- //
 
     /** 
-      @param _terminalV1 A terminal that this version is based on.
+      @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
+      @param _fundingCycles A funding cycle configuration store.
+      @param _ticketBooth A contract that manages Ticket printing and redeeming.
+      @param _operatorStore A contract storing operator assignments.
+      @param _modStore A storage for a project's mods.
+      @param _prices A price feed contract to use.
+      @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
     */
-    constructor(TerminalV1 _terminalV1)
-        Operatable(_terminalV1.operatorStore())
-    {
+    constructor(
+        IProjects _projects,
+        IFundingCycles _fundingCycles,
+        ITicketBooth _ticketBooth,
+        IOperatorStore _operatorStore,
+        IModStore _modStore,
+        IPrices _prices,
+        ITerminalDirectory _terminalDirectory,
+        IMaxTicketSupplyStore _maxTicketSupplyStore,
+        address payable _governance
+    ) Operatable(_operatorStore) {
         require(
-            _terminalV1 != TerminalV1(address(0)),
-            "TerminalV2: ZERO_ADDRESS"
+            _projects != IProjects(address(0)) &&
+                _fundingCycles != IFundingCycles(address(0)) &&
+                _ticketBooth != ITicketBooth(address(0)) &&
+                _operatorStore != IOperatorStore(address(0)) &&
+                _modStore != IModStore(address(0)) &&
+                _prices != IPrices(address(0)) &&
+                _terminalDirectory != ITerminalDirectory(address(0)) &&
+                _maxTicketSupplyStore != IMaxTicketSupplyStore(address(0)) &&
+                _governance != address(address(0)),
+            "TerminalV1: ZERO_ADDRESS"
         );
-        terminalV1 = _terminalV1;
-        projects = _terminalV1.projects();
-        fundingCycles = _terminalV1.fundingCycles();
-        ticketBooth = _terminalV1.ticketBooth();
-        modStore = _terminalV1.modStore();
-        prices = _terminalV1.prices();
-        terminalDirectory = _terminalV1.terminalDirectory();
-        governance = _terminalV1.governance();
+        projects = _projects;
+        fundingCycles = _fundingCycles;
+        ticketBooth = _ticketBooth;
+        modStore = _modStore;
+        prices = _prices;
+        terminalDirectory = _terminalDirectory;
+        maxTicketSupplyStore = _maxTicketSupplyStore;
+        governance = _governance;
     }
 
     /**
@@ -309,6 +325,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
         @dev _metadata.shouldPausePayments If payments should be paused during this funding cycle.
+      @param _maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
       @param _payoutMods Any payout mods to set.
       @param _ticketMods Any ticket mods to set.
     */
@@ -318,6 +335,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         string calldata _uri,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata2 calldata _metadata,
+        uint256 _maxTicketSupply,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external override {
@@ -338,6 +356,14 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             true
         );
 
+        // Set the max supply.
+        if (_maxTicketSupply > 0)
+            maxTicketSupplyStore.set(
+                _projectId,
+                _fundingCycle.configured,
+                _maxTicketSupply
+            );
+
         // Set payout mods if there are any.
         if (_payoutMods.length > 0)
             modStore.setPayoutMods(
@@ -353,6 +379,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _fundingCycle.configured,
                 _ticketMods
             );
+
+        emit Deploy(_projectId, _maxTicketSupply, msg.sender);
     }
 
     /**
@@ -382,6 +410,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
         @dev _metadata.shouldPausePayments If payments should be paused during this funding cycle.
+      @param _maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
       @param _payoutMods Any payout mods to set.
       @param _ticketMods Any ticket mods to set.
 
@@ -391,6 +420,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata2 calldata _metadata,
+        uint256 _maxTicketSupply,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     )
@@ -409,15 +439,21 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _metadata
         );
 
+        // All reserved tickets must be printed before configuring.
+        if (
+            uint256(_processedTicketTrackerOf[_projectId]) !=
+            ticketBooth.totalSupplyOf(_projectId)
+        ) printReservedTickets(_projectId);
+
+        // The max supply being set shouldn't be exceeded.
+        if (_maxTicketSupply > 0)
+            require(
+                ticketBooth.totalSupplyOf(_projectId) <= _maxTicketSupply,
+                "TerminalV2::configure: MAX_SUPPLY_EXCEEDED"
+            );
+
         // If the project can still print premined tickets configure the active funding cycle instead of creating a standby one.
         bool _shouldConfigureActive = canPrintPreminedTickets(_projectId);
-
-        // All reserved tickets must be printed before configuring.
-        // if (
-        //     uint256(_processedTicketTrackerOf[_projectId]) !=
-        //     ticketBooth.totalSupplyOf(_projectId)
-        // )
-        printReservedTickets(_projectId);
 
         // Configure the funding stage's state.
         FundingCycle memory _fundingCycle = fundingCycles.configure(
@@ -427,6 +463,14 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             fee,
             _shouldConfigureActive
         );
+
+        // Set the max supply for this configuration.
+        if (_maxTicketSupply > 0)
+            maxTicketSupplyStore.set(
+                _projectId,
+                _fundingCycle.configured,
+                _maxTicketSupply
+            );
 
         // Set payout mods for the new configuration if there are any.
         if (_payoutMods.length > 0)
@@ -443,6 +487,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _fundingCycle.configured,
                 _ticketMods
             );
+
+        emit Configure(
+            _fundingCycle.id,
+            _projectId,
+            _maxTicketSupply,
+            msg.sender
+        );
 
         return _fundingCycle.id;
     }
@@ -509,13 +560,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         // Set the preconfigure tickets as processed so that reserved tickets cant be minted against them.
         // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-        require(
-            _processedTicketTrackerOf[_projectId] < 0 ||
-                uint256(_processedTicketTrackerOf[_projectId]) +
-                    uint256(_weightedAmount) <=
-                uint256(type(int256).max),
-            "TerminalV2::printTickets: INT_LIMIT_REACHED"
-        );
+        // require(
+        //     _processedTicketTrackerOf[_projectId] < 0 ||
+        //         uint256(_processedTicketTrackerOf[_projectId]) +
+        //             uint256(_weightedAmount) <=
+        //         uint256(type(int256).max),
+        //     "TerminalV2::printTickets: INT_LIMIT_REACHED"
+        // );
 
         _processedTicketTrackerOf[_projectId] =
             _processedTicketTrackerOf[_projectId] +
@@ -833,19 +884,24 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     function addToBalance(uint256 _projectId) external payable override {
         // The amount must be positive.
         require(msg.value > 0, "TerminalV2::addToBalance: BAD_AMOUNT");
-        balanceOf[_projectId] = balanceOf[_projectId] + msg.value;
 
-        if (msg.sender == address(terminalV1)) {
-            uint256 _totalSupply = ticketBooth.totalSupplyOf(_projectId);
+        // Set the processed ticket tracker if it is currently not set.
+        if (
+            balanceOf[_projectId] == 0 &&
+            _processedTicketTrackerOf[_projectId] == 0
+        )
             // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-            require(
-                _totalSupply <= uint256(type(int256).max),
-                "TerminalV2::printReservedTickets: INT_LIMIT_REACHED"
+            // require(
+            //     _totalSupply <= uint256(type(int256).max),
+            //     "TerminalV2::printReservedTickets: INT_LIMIT_REACHED"
+            // );
+            // Set the tracker to be the new total supply.
+            _processedTicketTrackerOf[_projectId] = int256(
+                ticketBooth.totalSupplyOf(_projectId)
             );
 
-            // Set the tracker to be the new total supply.
-            _processedTicketTrackerOf[_projectId] = int256(_totalSupply);
-        }
+        // Set the balance.
+        balanceOf[_projectId] = balanceOf[_projectId] + msg.value;
         emit AddToBalance(_projectId, msg.value, msg.sender);
     }
 
@@ -890,7 +946,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     function setFee(uint256 _fee) external override onlyGov {
         // Fee must be under 100%.
         require(_fee <= 200, "TerminalV2::setFee: BAD_FEE");
-        //TODO new set fee cieling.
 
         // Set the fee.
         fee = _fee;
@@ -985,10 +1040,10 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         );
 
         // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-        require(
-            _totalTickets + amount <= uint256(type(int256).max),
-            "TerminalV2::printReservedTickets: INT_LIMIT_REACHED"
-        );
+        // require(
+        //     _totalTickets + amount <= uint256(type(int256).max),
+        //     "TerminalV2::printReservedTickets: INT_LIMIT_REACHED"
+        // );
 
         // Set the tracker to be the new total supply.
         _processedTicketTrackerOf[_projectId] = int256(_totalTickets + amount);
@@ -1004,7 +1059,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         // If there's nothing to print, return.
         // TODO new: moved down to allow setting tracker when amount is 0.
-        if (amount > 0 && _leftoverTicketAmount > 0)
+        if (_leftoverTicketAmount > 0)
             // Print any remaining reserved tickets to the owner.
             ticketBooth.print(_owner, _projectId, _leftoverTicketAmount, false);
 
@@ -1183,35 +1238,18 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Get a reference to the current funding cycle for the project.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
-        // Don't accept payments if paused. NOTE: if other projects are sending you money, they will no longer be able to.
-        // The pause payments flag is stored in bit 32 of the metadata property.
-        require(
-            ((_fundingCycle.metadata >> 32) & 1) == 0,
-            "TerminalV2::_pay: PAYMENTS_PAUSED"
-        );
-
-        // The strict target flag is stored in bit 33 of the metadata property.
-        // if there's a strict target, check that this payment doesn't exceed the target.
-        if (((_fundingCycle.metadata >> 33) & 1) == 1) {
-            // If the amount being paid exceeds the limit, return.
-            require(
-                strictTargetTracker[_fundingCycle.id] + _amount >
-                    _fundingCycle.target,
-                "TerminalV2::_pay: TARGET_EXCEEDED"
-            );
-
-            // Add the amount to the strict target tracker.
-            strictTargetTracker[_fundingCycle.id] =
-                strictTargetTracker[_fundingCycle.id] +
-                _amount;
+        // Determine which weight to use for calculating the number of tickets to print.
+        uint256 _weight;
+        // If a funding cycle doesn't yet exist, use the base weight.
+        if (_fundingCycle.number == 0) {
+            _weight = fundingCycles.BASE_WEIGHT();
+            // Use the weight override if it exists.
+        } else if (uint256(uint80(_fundingCycle.metadata >> 32)) > 0) {
+            _weight = uint256(uint80(_fundingCycle.metadata >> 32));
+            // Use the funding cycle's weight derived from compounding discount rates.
+        } else {
+            _weight = _fundingCycle.weight;
         }
-
-        // Use the funding cycle's weight if it exists. Otherwise use the base weight.
-        uint256 _weight = _fundingCycle.number == 0
-            ? fundingCycles.BASE_WEIGHT() // Use the weight override if it exists.
-            : uint256(uint80(_fundingCycle.metadata >> 34)) > 0
-            ? uint256(uint80(_fundingCycle.metadata >> 34))
-            : _fundingCycle.weight;
 
         // Multiply the amount by the funding cycle's weight to determine the amount of tickets to print.
         uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, _weight);
@@ -1221,6 +1259,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _reservedRate = _fundingCycle.number == 0
             ? 0
             : uint256(uint8(_fundingCycle.metadata >> 8));
+
+        _weightedAmount = _weightedAmountWithinMaxSupply(
+            _projectId,
+            _fundingCycle.configured,
+            _reservedRate,
+            _weightedAmount
+        );
 
         // Only print the tickets that are unreserved.
         uint256 _unreservedWeightedAmount = PRBMath.mulDiv(
@@ -1238,13 +1283,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             if (_fundingCycle.number == 0) {
                 // Mark the premined tickets as processed so that reserved tickets can't later be printed against them.
                 // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-                require(
-                    _processedTicketTrackerOf[_projectId] < 0 ||
-                        uint256(_processedTicketTrackerOf[_projectId]) +
-                            uint256(_weightedAmount) <=
-                        uint256(type(int256).max),
-                    "TerminalV2::printTickets: INT_LIMIT_REACHED"
-                );
+                // require(
+                //     _processedTicketTrackerOf[_projectId] < 0 ||
+                //         uint256(_processedTicketTrackerOf[_projectId]) +
+                //             uint256(_weightedAmount) <=
+                //         uint256(type(int256).max),
+                //     "TerminalV2::printTickets: INT_LIMIT_REACHED"
+                // );
                 _processedTicketTrackerOf[_projectId] =
                     _processedTicketTrackerOf[_projectId] +
                     int256(_unreservedWeightedAmount);
@@ -1268,13 +1313,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
             // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
             // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-            require(
-                _processedTicketTrackerOf[_projectId] > 0 ||
-                    uint256(-_processedTicketTrackerOf[_projectId]) +
-                        uint256(_weightedAmount) <=
-                    uint256(type(int256).max),
-                "TerminalV2::printTickets: INT_LIMIT_REACHED"
-            );
+            // require(
+            //     _processedTicketTrackerOf[_projectId] > 0 ||
+            //         uint256(-_processedTicketTrackerOf[_projectId]) +
+            //             uint256(_weightedAmount) <=
+            //         uint256(type(int256).max),
+            //     "TerminalV2::printTickets: INT_LIMIT_REACHED"
+            // );
             _processedTicketTrackerOf[_projectId] =
                 _processedTicketTrackerOf[_projectId] -
                 int256(_weightedAmount);
@@ -1406,15 +1451,10 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         packed |= _metadata.bondingCurveRate << 16;
         // reconfiguration bonding curve rate in bits 24-31.
         packed |= _metadata.reconfigurationBondingCurveRate << 24;
-        // should pause payments in bit 32.
-        packed |= (_metadata.shouldPausePayments ? 1 : 0) << 32;
-        // should use strict target in bit 33.
-        packed |= (_metadata.shouldUseStrictTarget ? 1 : 0) << 33;
-        // weight override in bits 34-113.
-        packed |= _metadata.weightOverride << 34;
+        // weight override in bits 32-110.
+        packed |= _metadata.weightOverride << 32;
         // min payment order of magnitude in bits 114-121
         //TODO add payment minimum order of magnitude 1-256 and payment minimum value 1-9
-        // Things to re-evaluate: funding cycles with discount rates.
     }
 
     /** 
@@ -1462,5 +1502,35 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 false
             );
         }
+    }
+
+    function _weightedAmountWithinMaxSupply(
+        uint256 _projectId,
+        uint256 _configuration,
+        uint256 _reservedRate,
+        uint256 _weightedAmount
+    ) private view returns (uint256) {
+        // Get the max ticket supply.
+        uint256 _maxTicketSupply = maxTicketSupplyStore.maxTicketSupplyOf(
+            _projectId,
+            _configuration
+        );
+
+        if (_maxTicketSupply == 0) return _weightedAmount;
+
+        uint256 _totalPrintedSupply = ticketBooth.totalSupplyOf(_projectId);
+        uint256 _totalOutstandingSupply = _totalPrintedSupply +
+            _reservedTicketAmountFrom(
+                _processedTicketTrackerOf[_projectId],
+                _reservedRate,
+                _totalPrintedSupply
+            );
+        // TODO: composability should not be broken.
+        // Intead, mint whatever is possible.
+        return
+            (_maxTicketSupply > 0 &&
+                _weightedAmount > _maxTicketSupply - _totalOutstandingSupply)
+                ? _maxTicketSupply - _totalOutstandingSupply
+                : _weightedAmount;
     }
 }

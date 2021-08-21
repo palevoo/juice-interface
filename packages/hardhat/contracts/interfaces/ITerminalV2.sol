@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./ITicketBooth.sol";
 import "./IFundingCycles.sol";
+import "./IMaxTicketSupplyStore.sol";
 import "./IYielder.sol";
 import "./IProjects.sol";
 import "./IModStore.sol";
@@ -15,15 +16,21 @@ struct FundingCycleMetadata2 {
     uint256 reservedRate;
     uint256 bondingCurveRate;
     uint256 reconfigurationBondingCurveRate;
-    bool shouldPausePayments;
-    bool shouldUseStrictTarget;
+    bool doesPermitMigration;
     uint256 weightOverride;
 }
 
 interface ITerminalV2 {
+    event Deploy(
+        uint256 indexed projectId,
+        uint256 indexed maxTicketSupply,
+        address caller
+    );
+
     event Configure(
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
+        uint256 indexed maxTicketSupply,
         address caller
     );
 
@@ -107,7 +114,10 @@ interface ITerminalV2 {
 
     function modStore() external view returns (IModStore);
 
-    function terminalV1() external view returns (ITerminalV1);
+    function maxTicketSupplyStore()
+        external
+        view
+        returns (IMaxTicketSupplyStore);
 
     function reservedTicketBalanceOf(uint256 _projectId, uint256 _reservedRate)
         external
@@ -134,17 +144,13 @@ interface ITerminalV2 {
 
     function fee() external view returns (uint256);
 
-    function strictTargetTracker(uint256 _fundingCycleId)
-        external
-        view
-        returns (uint256);
-
     function deploy(
         address _owner,
         bytes32 _handle,
         string calldata _uri,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata2 calldata _metadata,
+        uint256 _maxTicketSupply,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external;
@@ -153,6 +159,7 @@ interface ITerminalV2 {
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata2 calldata _metadata,
+        uint256 _maxTicketSupply,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external returns (uint256);
