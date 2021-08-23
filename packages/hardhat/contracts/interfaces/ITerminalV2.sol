@@ -192,4 +192,12 @@ interface ITerminalV2 {
         payable;
 
     function transferGovernance(address _newGovernance) external;
+
+    function pay(
+        uint256 _projectId,
+        address _beneficiary,
+        uint256 _minReturnedTickets,
+        string calldata _memo,
+        bool _preferUnstakedTickets
+    ) external payable returns (uint256 fundingCycleId);
 }

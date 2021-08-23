@@ -609,6 +609,49 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _projectId,
                 msg.value,
                 _beneficiary,
+                0,
+                _memo,
+                _preferUnstakedTickets
+            );
+    }
+
+    /**
+      @notice 
+      Contribute ETH to a project.
+
+      @dev 
+      Print's the project's tickets proportional to the amount of the contribution.
+
+      @dev 
+      The msg.value is the amount of the contribution in wei.
+
+      @param _projectId The ID of the project being contribute to.
+      @param _beneficiary The address to print Tickets for. 
+      @param _minReturnedTickets The minimum number of tickets expected in return. 
+      @param _memo A memo that will be included in the published event.
+      @param _preferUnstakedTickets Whether ERC20's should be unstaked automatically if they have been issued.
+
+      @return The ID of the funding cycle that the payment was made during.
+    */
+    function pay(
+        uint256 _projectId,
+        address _beneficiary,
+        uint256 _minReturnedTickets,
+        string calldata _memo,
+        bool _preferUnstakedTickets
+    ) external payable override returns (uint256) {
+        // Positive payments only.
+        require(msg.value > 0, "TerminalV2::pay: BAD_AMOUNT");
+
+        // Cant send tickets to the zero address.
+        require(_beneficiary != address(0), "TerminalV2::pay: ZERO_ADDRESS");
+
+        return
+            _pay(
+                _projectId,
+                msg.value,
+                _beneficiary,
+                _minReturnedTickets,
                 _memo,
                 _preferUnstakedTickets
             );
@@ -1104,6 +1147,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                             _mod.projectId,
                             _modCut,
                             _mod.beneficiary,
+                            0,
                             _memo,
                             _mod.preferUnstaked
                         );
@@ -1197,6 +1241,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _projectId,
         uint256 _amount,
         address _beneficiary,
+        uint256 _minReturnedTickets,
         string memory _memo,
         bool _preferUnstakedTickets
     ) private returns (uint256) {
@@ -1238,6 +1283,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _weightedAmount,
             200 - _reservedRate,
             200
+        );
+
+        // The minimum amount of unreserved tickets must be printed.
+        require(
+            _unreservedWeightedAmount >= _minReturnedTickets,
+            "TerminalV2::_pay: INADEQUATE"
         );
 
         // Add to the balance of the project.
@@ -1433,7 +1484,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         // When processing the admin fee, save gas if the admin is using this contract as its terminal.
         _terminal == this // Use the local pay call.
-            ? _pay(1, feeAmount, _beneficiary, _memo, false) // Use the external pay call of the correct terminal.
+            ? _pay(1, feeAmount, _beneficiary, 0, _memo, false) // Use the external pay call of the correct terminal.
             : _terminal.pay{value: feeAmount}(1, _beneficiary, _memo, false);
     }
 
