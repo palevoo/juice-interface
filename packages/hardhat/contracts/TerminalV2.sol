@@ -12,6 +12,7 @@ import "./abstract/JuiceboxProject.sol";
 import "./abstract/Operatable.sol";
 
 import "./libraries/Operations.sol";
+import "./libraries/Operations2.sol";
 
 /**
   ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -71,7 +72,9 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     ITerminalDirectory public immutable override terminalDirectory;
 
     /// @notice The contract that stores each project's configured max supply of tickets.
-    IMaxTicketSupplyStore public immutable override maxTicketSupplyStore;
+    IFundingCycleExtrasStore1
+        public immutable
+        override fundingCycleExtrasStore1;
 
     // --- public stored properties --- //
 
@@ -83,9 +86,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
     /// @notice The governance of the contract who makes fees and can allow new TerminalV1 contracts to be migrated to by project owners.
     address payable public override governance;
-
-    /// @notice The governance of the contract who makes fees and can allow new TerminalV1 contracts to be migrated to by project owners.
-    address payable public override pendingGovernance;
 
     // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
     mapping(ITerminal => bool) public override migrationIsAllowed;
@@ -270,7 +270,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         IModStore _modStore,
         IPrices _prices,
         ITerminalDirectory _terminalDirectory,
-        IMaxTicketSupplyStore _maxTicketSupplyStore,
+        IFundingCycleExtrasStore1 _fundingCycleExtrasStore1,
         address payable _governance
     ) Operatable(_operatorStore) {
         require(
@@ -281,7 +281,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _modStore != IModStore(address(0)) &&
                 _prices != IPrices(address(0)) &&
                 _terminalDirectory != ITerminalDirectory(address(0)) &&
-                _maxTicketSupplyStore != IMaxTicketSupplyStore(address(0)) &&
+                _fundingCycleExtrasStore1 !=
+                IFundingCycleExtrasStore1(address(0)) &&
                 _governance != address(address(0)),
             "TerminalV1: ZERO_ADDRESS"
         );
@@ -291,7 +292,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         modStore = _modStore;
         prices = _prices;
         terminalDirectory = _terminalDirectory;
-        maxTicketSupplyStore = _maxTicketSupplyStore;
+        fundingCycleExtrasStore1 = _fundingCycleExtrasStore1;
         governance = _governance;
     }
 
@@ -325,7 +326,9 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
         @dev _metadata.shouldPausePayments If payments should be paused during this funding cycle.
-      @param _maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
+      @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
+        @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
+        @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
       @param _payoutMods Any payout mods to set.
       @param _ticketMods Any ticket mods to set.
     */
@@ -335,7 +338,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         string calldata _uri,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata2 calldata _metadata,
-        uint256 _maxTicketSupply,
+        FundingCycleExtras1 calldata _extras,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external override {
@@ -356,12 +359,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             true
         );
 
-        // Set the max supply.
-        if (_maxTicketSupply > 0)
-            maxTicketSupplyStore.set(
+        // Set the extras for this configuration if values exist.
+        if (_extras.maxTicketSupply > 0 || _extras.overflowAllowance > 0)
+            fundingCycleExtrasStore1.set(
                 _projectId,
                 _fundingCycle.configured,
-                _maxTicketSupply
+                _extras
             );
 
         // Set payout mods if there are any.
@@ -379,8 +382,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _fundingCycle.configured,
                 _ticketMods
             );
-
-        emit Deploy(_projectId, _maxTicketSupply, msg.sender);
     }
 
     /**
@@ -410,7 +411,9 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
         @dev _metadata.shouldPausePayments If payments should be paused during this funding cycle.
-      @param _maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
+      @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
+        @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
+        @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
       @param _payoutMods Any payout mods to set.
       @param _ticketMods Any ticket mods to set.
 
@@ -420,7 +423,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata2 calldata _metadata,
-        uint256 _maxTicketSupply,
+        FundingCycleExtras1 calldata _extras,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     )
@@ -445,13 +448,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             ticketBooth.totalSupplyOf(_projectId)
         ) printReservedTickets(_projectId);
 
-        // The max supply being set shouldn't be exceeded.
-        if (_maxTicketSupply > 0)
-            require(
-                ticketBooth.totalSupplyOf(_projectId) <= _maxTicketSupply,
-                "TerminalV2::configure: MAX_SUPPLY_EXCEEDED"
-            );
-
         // If the project can still print premined tickets configure the active funding cycle instead of creating a standby one.
         bool _shouldConfigureActive = canPrintPreminedTickets(_projectId);
 
@@ -464,12 +460,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _shouldConfigureActive
         );
 
-        // Set the max supply for this configuration.
-        if (_maxTicketSupply > 0)
-            maxTicketSupplyStore.set(
+        // Set the extras for this configuration if values exist.
+        if (_extras.maxTicketSupply > 0 || _extras.overflowAllowance > 0)
+            fundingCycleExtrasStore1.set(
                 _projectId,
                 _fundingCycle.configured,
-                _maxTicketSupply
+                _extras
             );
 
         // Set payout mods for the new configuration if there are any.
@@ -487,13 +483,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _fundingCycle.configured,
                 _ticketMods
             );
-
-        emit Configure(
-            _fundingCycle.id,
-            _projectId,
-            _maxTicketSupply,
-            msg.sender
-        );
 
         return _fundingCycle.id;
     }
@@ -873,22 +862,22 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
       @param _projectId The ID of the project to which the funds received belong.
     */
     function addToBalance(uint256 _projectId) external payable override {
-        // The amount must be positive.
-        require(msg.value > 0, "TerminalV2::addToBalance: BAD_AMOUNT");
+        _addToBalance(_projectId, msg.value, "");
+    }
 
-        // Set the processed ticket tracker if it is currently not set.
-        if (
-            balanceOf[_projectId] == 0 &&
-            _processedTicketTrackerOf[_projectId] == 0
-        )
-            // Set the tracker to be the new total supply.
-            _processedTicketTrackerOf[_projectId] = int256(
-                ticketBooth.totalSupplyOf(_projectId)
-            );
+    /** 
+      @notice 
+      Receives and allocates funds belonging to the specified project, with a memo.
 
-        // Set the balance.
-        balanceOf[_projectId] = balanceOf[_projectId] + msg.value;
-        emit AddToBalance(_projectId, msg.value, msg.sender);
+      @param _projectId The ID of the project to which the funds received belong.
+      @param _memo A memo to associate with the emitted event.
+    */
+    function addToBalance(uint256 _projectId, string calldata _memo)
+        public
+        payable
+        override
+    {
+        _addToBalance(_projectId, msg.value, _memo);
     }
 
     /**
@@ -917,78 +906,51 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     }
 
     /** 
-      @notice 
-      Allow the admin to change the fee. 
+      @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
 
-      @dev
-      Only funding cycle reconfigurations after the new fee is set will use the new fee.
-      All future funding cycles based on configurations made in the past will use the fee that was set at the time of the configuration.
-    
-      @dev
-      Only governance can set a new fee.
-
-      @param _fee The new fee percent. Out of 200.
+      @param _projectId The ID of the project to use the allowance of.
+      @param _amount The amount of the allowance to use.
+      @param _beneficiary The address to send the funds.
     */
-    function setFee(uint256 _fee) external override onlyGov {
-        // Fee must be under 100%.
-        require(_fee <= 200, "TerminalV2::setFee: BAD_FEE");
-
-        // Set the fee.
-        fee = _fee;
-
-        emit SetFee(_fee);
-    }
-
-    /** 
-      @notice 
-      Allows governance to transfer its privileges to another contract.
-
-      @dev
-      Only the currency governance can appoint a new governance.
-
-      @param _pendingGovernance The governance to transition power to. 
-        @dev This address will have to accept the responsibility in a subsequent transaction.
-    */
-    function appointGovernance(address payable _pendingGovernance)
+    function useAllowance(
+        uint256 _projectId,
+        uint256 _amount,
+        address payable _beneficiary
+    )
         external
-        override
-        onlyGov
+        nonReentrant
+        requirePermission(
+            projects.ownerOf(_projectId),
+            _projectId,
+            Operations2.UseAllowance
+        )
     {
-        // The new governance can't be the zero address.
+        // Get a reference to the project's current funding cycle.
+        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+
         require(
-            _pendingGovernance != address(0),
-            "TerminalV2::appointGovernance: ZERO_ADDRESS"
-        );
-        // The new governance can't be the same as the current governance.
-        require(
-            _pendingGovernance != governance,
-            "TerminalV2::appointGovernance: NO_OP"
+            _amount <= balanceOf[_projectId],
+            "TerminalV2::tapAllowance: INSUFFICIENT_FUNDS"
         );
 
-        // Set the appointed governance as pending.
-        pendingGovernance = _pendingGovernance;
-
-        emit AppointGovernance(_pendingGovernance);
-    }
-
-    /** 
-      @notice 
-      Allows contract to accept its appointment as the new governance.
-    */
-    function acceptGovernance() external override {
-        // Only the pending governance address can accept.
-        require(
-            msg.sender == pendingGovernance,
-            "TerminalV2::acceptGovernance: UNAUTHORIZED"
+        fundingCycleExtrasStore1.decrementAllowance(
+            _projectId,
+            _fundingCycle.configured,
+            _amount
         );
 
-        // Get a reference to the pending governance.
-        address payable _pendingGovernance = pendingGovernance;
+        balanceOf[_projectId] = balanceOf[_projectId] - _amount;
 
-        // Set the govenance to the pending value.
-        governance = _pendingGovernance;
+        // Otherwise, send the funds directly to the beneficiary.
+        Address.sendValue(_beneficiary, _amount);
 
-        emit AcceptGovernance(_pendingGovernance);
+        emit UseAllowance(
+            _projectId,
+            _fundingCycle.configured,
+            _amount,
+            _beneficiary,
+            msg.sender
+        );
     }
 
     // --- public transactions --- //
@@ -1240,6 +1202,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             ? 0
             : uint256(uint8(_fundingCycle.metadata >> 8));
 
+        // Make sure the weighted amount respects the preconfigured max supply.
         _weightedAmount = _weightedAmountWithinMaxSupply(
             _projectId,
             _fundingCycle.configured,
@@ -1417,8 +1380,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         packed |= _metadata.reconfigurationBondingCurveRate << 24;
         // weight override in bits 32-110.
         packed |= _metadata.weightOverride << 32;
-        // min payment order of magnitude in bits 114-121
-        //TODO add payment minimum order of magnitude 1-256 and payment minimum value 1-9
     }
 
     /** 
@@ -1468,6 +1429,17 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         }
     }
 
+    /** 
+      @notice 
+      Applies the preconfigured max supply of tickets within a given configuration to the provided weighted amount.
+
+      @param _projectId The ID of the project to check for the weighted amount within the max supply.
+      @param _configuration The funding cycle configuration to check for the weighted amount within the max supply.
+      @param _reservedRate The reserved rate to use when finding the correct value.
+      @param _weightedAmount The original weighted amount.
+
+      @return The weighted amount within the preconfigured max supply.
+    */
     function _weightedAmountWithinMaxSupply(
         uint256 _projectId,
         uint256 _configuration,
@@ -1475,26 +1447,63 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _weightedAmount
     ) private view returns (uint256) {
         // Get the max ticket supply.
-        uint256 _maxTicketSupply = maxTicketSupplyStore.maxTicketSupplyOf(
+        uint256 _maxTicketSupply = fundingCycleExtrasStore1.maxTicketSupplyOf(
             _projectId,
             _configuration
         );
 
+        // If no max is set, return the weighted amount.
         if (_maxTicketSupply == 0) return _weightedAmount;
 
+        // Get the total printed supply.
         uint256 _totalPrintedSupply = ticketBooth.totalSupplyOf(_projectId);
+
+        // The outstanding supply is the total printed supply plus any allocated reserved tickets.
         uint256 _totalOutstandingSupply = _totalPrintedSupply +
             _reservedTicketAmountFrom(
                 _processedTicketTrackerOf[_projectId],
                 _reservedRate,
                 _totalPrintedSupply
             );
-        // TODO: composability should not be broken.
-        // Intead, mint whatever is possible.
+
+        // If the outstanding amount has already been exceeded, return 0.
+        if (_totalOutstandingSupply > _maxTicketSupply) return 0;
+
+        // If there aren't enough tickets to fulfill the full weight, print all that is available.
         return
-            (_maxTicketSupply > 0 &&
-                _weightedAmount > _maxTicketSupply - _totalOutstandingSupply)
+            _weightedAmount > _maxTicketSupply - _totalOutstandingSupply
                 ? _maxTicketSupply - _totalOutstandingSupply
                 : _weightedAmount;
+    }
+
+    /** 
+      @notice 
+      Receives and allocates funds belonging to the specified project, with a memo.
+
+      @param _projectId The ID of the project to which the funds received belong.
+      @param _amount The amount being added.
+      @param _memo A memo to associate with the emitted event.
+    */
+    function _addToBalance(
+        uint256 _projectId,
+        uint256 _amount,
+        string memory _memo
+    ) private {
+        // The amount must be positive.
+        require(_amount > 0, "TerminalV2::_addToBalance: BAD_AMOUNT");
+
+        // Set the processed ticket tracker if it is currently not set.
+        if (
+            balanceOf[_projectId] == 0 &&
+            _processedTicketTrackerOf[_projectId] == 0
+        )
+            // Set the tracker to be the new total supply.
+            _processedTicketTrackerOf[_projectId] = int256(
+                ticketBooth.totalSupplyOf(_projectId)
+            );
+
+        // Set the balance.
+        balanceOf[_projectId] = balanceOf[_projectId] + _amount;
+        emit AddToBalanceWithMemo(_projectId, _amount, _memo, msg.sender);
     }
 }
