@@ -85,7 +85,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     uint256 public override fee = 10;
 
     /// @notice The governance of the contract who makes fees and can allow new TerminalV1 contracts to be migrated to by project owners.
-    address payable public override governance;
+    address public override governance;
 
     // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
     mapping(ITerminal => bool) public override migrationIsAllowed;
@@ -271,7 +271,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         IPrices _prices,
         ITerminalDirectory _terminalDirectory,
         IFundingCycleExtrasStore1 _fundingCycleExtrasStore1,
-        address payable _governance
+        address _governance
     ) Operatable(_operatorStore) {
         require(
             _projects != IProjects(address(0)) &&
@@ -896,9 +896,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             "TerminalV2::allowMigration: ZERO_ADDRESS"
         );
 
-        // Can't migrate to this same contract
-        require(_contract != this, "TerminalV2::allowMigration: NO_OP");
-
         // Set the contract as allowed
         migrationIsAllowed[_contract] = true;
 
@@ -951,6 +948,32 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _beneficiary,
             msg.sender
         );
+    }
+
+    /** 
+      @notice 
+      Allows governance to transfer its privileges to another contract.
+
+      @dev
+      Only the current governance can transer power to a new governance.
+
+      @param _newGovernance The governance to transition power to. 
+    */
+    function transferGovernance(address _newGovernance)
+        external
+        override
+        onlyGov
+    {
+        // The new governance can't be the zero address.
+        require(
+            _newGovernance != address(0),
+            "TerminalV1::transferGovernance: ZERO_ADDRESS"
+        );
+
+        // Set the govenance to the new value.
+        governance = _newGovernance;
+
+        emit TransferGovernance(_newGovernance);
     }
 
     // --- public transactions --- //
@@ -1384,7 +1407,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
     /** 
       @notice 
-      Takes a fee into the Governance contract's project.
+      Takes a fee into the juiceboxDAO's project, which has an id of 1.
 
       @param _from The amount to take a fee from.
       @param _percent The percent fee to take. Out of 200.
@@ -1405,28 +1428,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Nothing to do if there's no fee to take.
         if (feeAmount == 0) return 0;
 
+        // Get the terminal for this contract's project.
+        ITerminal _terminal = terminalDirectory.terminalOf(1);
+
         // When processing the admin fee, save gas if the admin is using this contract as its terminal.
-        if (
-            terminalDirectory.terminalOf(
-                JuiceboxProject(governance).projectId()
-            ) == this
-        ) {
-            // Use the local pay call.
-            _pay(
-                JuiceboxProject(governance).projectId(),
-                feeAmount,
-                _beneficiary,
-                _memo,
-                false
-            );
-        } else {
-            // Use the external pay call of the governance contract.
-            JuiceboxProject(governance).pay{value: feeAmount}(
-                _beneficiary,
-                _memo,
-                false
-            );
-        }
+        _terminal == this // Use the local pay call.
+            ? _pay(1, feeAmount, _beneficiary, _memo, false) // Use the external pay call of the correct terminal.
+            : _terminal.pay{value: feeAmount}(1, _beneficiary, _memo, false);
     }
 
     /** 
@@ -1504,6 +1512,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         // Set the balance.
         balanceOf[_projectId] = balanceOf[_projectId] + _amount;
-        emit AddToBalanceWithMemo(_projectId, _amount, _memo, msg.sender);
+        emit AddToBalance(_projectId, _amount, _memo, msg.sender);
     }
 }
