@@ -84,7 +84,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     /// @notice The percent fee the Juicebox project takes from tapped amounts. Out of 200.
     uint256 public override fee = 10;
 
-    /// @notice The governance of the contract who makes fees and can allow new TerminalV1 contracts to be migrated to by project owners.
+    /// @notice The governance of the contract who makes fees and can allow new terminal contracts to be migrated to by project owners.
     address public override governance;
 
     // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
@@ -284,7 +284,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _fundingCycleExtrasStore1 !=
                 IFundingCycleExtrasStore1(address(0)) &&
                 _governance != address(address(0)),
-            "TerminalV1: ZERO_ADDRESS"
+            "TerminalV2: ZERO_ADDRESS"
         );
         projects = _projects;
         fundingCycles = _fundingCycles;
@@ -319,13 +319,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           If the number is 180, a contribution to the next funding stage will only give you 90% of tickets given to a contribution of the same amount during the current funding stage.
           If the number is 0, an non-recurring funding stage will get made.
         @dev _properties.ballot The new ballot that will be used to approve subsequent reconfigurations.
-      @param _metadata A struct specifying the TerminalV1 specific params _bondingCurveRate, and _reservedRate.
+      @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
         @dev _metadata.reservedRate A number from 0-200 indicating the percentage of each contribution's tickets that will be reserved for the project owner.
         @dev _metadata.bondingCurveRate The rate from 0-200 at which a project's Tickets can be redeemed for surplus.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-        @dev _metadata.shouldPausePayments If payments should be paused during this funding cycle.
+        @dev _metadata.weightMultiplier A value to multiply the funding cycle's weight to when calculating the amount of tokens to mint per payment received. This value will be divided by 1E12.
       @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
         @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
         @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
@@ -404,13 +404,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           If the number is 180, a contribution to the next funding stage will only give you 90% of tickets given to a contribution of the same amount during the current funding stage.
           If the number is 0, an non-recurring funding stage will get made.
         @dev _properties.ballot The new ballot that will be used to approve subsequent reconfigurations.
-      @param _metadata A struct specifying the TerminalV1 specific params _bondingCurveRate, and _reservedRate.
+      @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
         @dev _metadata.reservedRate A number from 0-200 indicating the percentage of each contribution's tickets that will be reserved for the project owner.
         @dev _metadata.bondingCurveRate The rate from 0-200 at which a project's Tickets can be redeemed for surplus.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-        @dev _metadata.shouldPausePayments If payments should be paused during this funding cycle.
+        @dev _metadata.weightMultiplier A value to multiply the funding cycle's weight to when calculating the amount of tokens to mint per payment received. This value will be divided by 1E12.
       @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
         @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
         @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
@@ -951,11 +951,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
       @param _projectId The ID of the project to use the allowance of.
       @param _amount The amount of the allowance to use.
       @param _beneficiary The address to send the funds.
+      @param _memo A memo to associate with the event.
     */
     function useAllowance(
         uint256 _projectId,
         uint256 _amount,
-        address payable _beneficiary
+        address payable _beneficiary,
+        string calldata _memo
     )
         external
         nonReentrant
@@ -968,20 +970,23 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
+        // The balance must contain the specified amount.
         require(
             _amount <= balanceOf[_projectId],
-            "TerminalV2::tapAllowance: INSUFFICIENT_FUNDS"
+            "TerminalV2::useAllowance: INSUFFICIENT_FUNDS"
         );
 
+        // Decrement the amount from the allowance so that it can't be used again.
         fundingCycleExtrasStore1.decrementAllowance(
             _projectId,
             _fundingCycle.configured,
             _amount
         );
 
+        // Decrement the project's balance.
         balanceOf[_projectId] = balanceOf[_projectId] - _amount;
 
-        // Otherwise, send the funds directly to the beneficiary.
+        // Send the funds to the beneficiary.
         Address.sendValue(_beneficiary, _amount);
 
         emit UseAllowance(
@@ -989,6 +994,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _fundingCycle.configured,
             _amount,
             _beneficiary,
+            _memo,
             msg.sender
         );
     }
@@ -1555,11 +1561,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // The amount must be positive.
         require(_amount > 0, "TerminalV2::_addToBalance: BAD_AMOUNT");
 
-        // Set the processed ticket tracker if it is currently not set.
-        if (
-            balanceOf[_projectId] == 0 &&
-            _processedTicketTrackerOf[_projectId] == 0
-        )
+        // Set the processed ticket tracker if this isnt the current terminal for the project.
+        if (terminalDirectory.terminalOf(_projectId) != this)
             // Set the tracker to be the new total supply.
             _processedTicketTrackerOf[_projectId] = int256(
                 ticketBooth.totalSupplyOf(_projectId)

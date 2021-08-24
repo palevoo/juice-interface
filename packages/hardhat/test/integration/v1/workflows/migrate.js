@@ -533,22 +533,22 @@ module.exports = [
         ],
         value: paymentValue2
       })
-  },
-  // TODO the terminalV1dot1 will have to know about TerminalV1.
-  {
-    description:
-      "The owner should not have printable reserved tickets available",
-    fn: async ({
-      checkFn,
-      randomSignerFn,
-      local: { expectedProjectId, reservedRate, secondTerminalV1 }
-    }) =>
-      checkFn({
-        caller: randomSignerFn(),
-        contract: secondTerminalV1,
-        fn: "reservedTicketBalanceOf",
-        args: [expectedProjectId, reservedRate],
-        expect: 0
-      })
   }
+  // // TODO the terminalV1dot1 will have to know about TerminalV1.
+  // {
+  //   description:
+  //     "The owner should not have printable reserved tickets available",
+  //   fn: async ({
+  //     checkFn,
+  //     randomSignerFn,
+  //     local: { expectedProjectId, reservedRate, secondTerminalV1 }
+  //   }) =>
+  //     checkFn({
+  //       caller: randomSignerFn(),
+  //       contract: secondTerminalV1,
+  //       fn: "reservedTicketBalanceOf",
+  //       args: [expectedProjectId, reservedRate],
+  //       expect: 0
+  //     })
+  // }
 ];

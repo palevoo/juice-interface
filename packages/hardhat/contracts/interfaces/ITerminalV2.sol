@@ -80,10 +80,11 @@ interface ITerminalV2 {
     event Deposit(uint256 amount);
 
     event UseAllowance(
-        uint256 indexed _projectId,
-        uint256 indexed _configuration,
-        uint256 _amount,
-        address _beneficiary,
+        uint256 indexed projectId,
+        uint256 indexed configuration,
+        uint256 amount,
+        address beneficiary,
+        string memo,
         address caller
     );
 
