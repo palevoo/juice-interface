@@ -17,7 +17,7 @@ struct FundingCycleMetadata2 {
     uint256 bondingCurveRate;
     uint256 reconfigurationBondingCurveRate;
     bool doesPermitMigration;
-    uint256 weightOverride;
+    uint256 weightMultiplier;
 }
 
 interface ITerminalV2 {

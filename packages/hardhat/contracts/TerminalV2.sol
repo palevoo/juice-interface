@@ -1255,7 +1255,11 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _weight = fundingCycles.BASE_WEIGHT();
             // Use the weight override if it exists.
         } else if (uint256(uint80(_fundingCycle.metadata >> 32)) > 0) {
-            _weight = uint256(uint80(_fundingCycle.metadata >> 32));
+            _weight = PRBMath.mulDiv(
+                _fundingCycle.weight,
+                uint256(uint24(_fundingCycle.metadata >> 32)),
+                1E12
+            );
             // Use the funding cycle's weight derived from compounding discount rates.
         } else {
             _weight = _fundingCycle.weight;
@@ -1440,8 +1444,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         // The reconfiguration bonding curve rate must b.
         require(
-            _metadata.weightOverride <= type(uint80).max,
-            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_WEIGHT_OVERRIDE"
+            _metadata.weightMultiplier <= type(uint24).max,
+            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_WEIGHT_MULTIPLIER"
         );
 
         // version 0 in the first 8 bytes.
@@ -1452,8 +1456,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         packed |= _metadata.bondingCurveRate << 16;
         // reconfiguration bonding curve rate in bits 24-31.
         packed |= _metadata.reconfigurationBondingCurveRate << 24;
-        // weight override in bits 32-110.
-        packed |= _metadata.weightOverride << 32;
+        // weight override in bits 32-55.
+        packed |= _metadata.weightMultiplier << 32;
     }
 
     /** 
