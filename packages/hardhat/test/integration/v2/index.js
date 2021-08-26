@@ -56,7 +56,12 @@ module.exports = function() {
       terminalDirectory.address
     ]);
 
-    const terminalV1 = await this.deployContractFn("TerminalV1", [
+    const fundingCycleExtrasStore1 = await this.deployContractFn(
+      "FundingCycleExtrasStore1",
+      [terminalDirectory.address]
+    );
+
+    const terminalV2 = await this.deployContractFn("TerminalV2", [
       projects.address,
       fundingCycles.address,
       ticketBooth.address,
@@ -64,6 +69,7 @@ module.exports = function() {
       modStore.address,
       prices.address,
       terminalDirectory.address,
+      fundingCycleExtrasStore1.address,
       governance.address
     ]);
 
@@ -79,7 +85,7 @@ module.exports = function() {
     */
     await this.executeFn({
       caller: this.deployer,
-      contract: terminalV1,
+      contract: terminalV2,
       fn: "deploy",
       args: [
         this.deployer.address,
@@ -97,7 +103,12 @@ module.exports = function() {
         {
           reservedRate: 0,
           bondingCurveRate: 0,
-          reconfigurationBondingCurveRate: 0
+          reconfigurationBondingCurveRate: 0,
+          weightMultiplier: 0
+        },
+        {
+          maxTicketSupply: 0,
+          overflowAllowance: 0
         },
         [],
         []
@@ -114,7 +125,7 @@ module.exports = function() {
       fundingCycles,
       projects,
       modStore,
-      terminalV1,
+      terminalV2,
       proxyPaymentAddressManager
     };
 
@@ -143,6 +154,12 @@ module.exports = function() {
 
     // The denominator for discount rates is 1000, meaning only 80% - 100% are accessible.
     this.constants.DiscountRatePercentDenominator = BigNumber.from(1000);
+
+    // The max number to multiply a funding cycle's weight with to get the number of tickets to print.
+    this.constants.MaxWeightMultiplier = BigNumber.from(10).pow(24);
+
+    // The number that will be used to divide the weight multiplier by to get the final value.
+    this.constants.WeightMultiplierDivisor = BigNumber.from(10).pow(18);
 
     this.incrementProjectIdFn = () => {
       projectId = projectId.add(1);
@@ -178,112 +195,112 @@ module.exports = function() {
     };
   });
 
-  for (let i = 0; i < 1; i += 1) {
-    describe(
-      "Projects can be created, have their URIs changed, transfer/claim handles, and be attached to funding cycles",
-      run(workflows.projects)
-    );
-    describe(
-      "Projects can have their handle's challenged, and claimed if not renewed in time",
-      run(workflows.challengeHandle)
-    );
-    describe(
-      "Deployment of a project with funding cycles and mods included",
-      run(workflows.deploy)
-    );
-    describe(
-      "Ticket holders can lock their tickets, which prevents them from being redeemed, unstaked, or transfered",
-      run(workflows.ticketLockingAndTransfers)
-    );
+  for (let i = 0; i < 20; i += 1) {
+    // describe(
+    //   "Projects can be created, have their URIs changed, transfer/claim handles, and be attached to funding cycles",
+    //   run(workflows.projects)
+    // );
+    // describe(
+    //   "Projects can have their handle's challenged, and claimed if not renewed in time",
+    //   run(workflows.challengeHandle)
+    // );
+    // describe(
+    //   "Deployment of a project with funding cycles and mods included",
+    //   run(workflows.deploy)
+    // );
+    // describe(
+    //   "Ticket holders can lock their tickets, which prevents them from being redeemed, unstaked, or transfered",
+    //   run(workflows.ticketLockingAndTransfers)
+    // );
     describe("Redeem tickets for overflow", run(workflows.redeem));
-    describe("Prints reserved tickets", run(workflows.printReservedTickets));
-    describe(
-      "Projects can print premined tickets before a payment has been made to it",
-      run(workflows.printPreminedTickets)
-    );
-    describe(
-      "Issues tickets and honors preference",
-      run(workflows.issueTickets)
-    );
-    describe("Tap funds up to the configured target", run(workflows.tap));
-    describe(
-      "A fee should be taken into governance's project when a project taps funds",
-      run(workflows.takeFee)
-    );
-    describe("Reconfigures a project", run(workflows.reconfigure));
-    describe(
-      "A funding cycle configuration can have a limit",
-      run(workflows.limit)
-    );
-    describe(
-      "A funding cycle configuration can have a duration of 0",
-      run(workflows.zeroDuration)
-    );
-    describe(
-      "A funding cycle configuration can be non recurring",
-      run(workflows.nonRecurring)
-    );
-    describe(
-      "Ballot must be approved for reconfiguration to become active",
-      run(workflows.approvedBallot)
-    );
-    describe(
-      "Reconfiguration that fails a ballot should be ignored",
-      run(workflows.failedBallot)
-    );
-    describe(
-      "Reconfiguration proposed after a failed configuration should obide by the ballot duration",
-      run(workflows.iteratedFailedBallot)
-    );
-    describe("Migrate from one Terminal to another", run(workflows.migrate));
-    describe(
-      "Operators can be given permissions",
-      run(workflows.operatorPermissions)
-    );
-    describe(
-      "Set and update payout mods, honoring locked status",
-      run(workflows.setPayoutMods)
-    );
-    describe(
-      "Set and update ticket mods, honoring locked status",
-      run(workflows.setTicketMods)
-    );
-    describe(
-      "A new governance can be appointed and accepted",
-      run(workflows.governance)
-    );
-    describe(
-      "Governance can set a new fee for future configurations",
-      run(workflows.setFee)
-    );
-    describe(
-      "Currencies rates are converted to/from correctly",
-      run(workflows.currencyConversion)
-    );
-    describe(
-      "Transfer ownership over a project",
-      run(workflows.transferProjectOwnership)
-    );
-    describe(
-      "Direct payment addresses can be deployed to add an fundable address to a project",
-      run(workflows.directPaymentAddresses)
-    );
-    describe(
-      "A project can be created without a payment terminal, and can set one after",
-      run(workflows.setTerminal)
-    );
-    describe(
-      "Proxy payment addresses can be deployed to add an fundable address to a project",
-      run(workflows.proxyPaymentAddresses)
-    );
-    describe("Prints reserved tickets", run(workflows.printReservedTickets));
-    describe(
-      "Prints reserved tickets from zero to full",
-      run(workflows.printReservedTicketsFromZeroToFull)
-    );
-    describe(
-      "Prints reserved tickets can change once printed",
-      run(workflows.printReservedTicketsCanChangeOncePrinted)
-    );
+    // describe("Prints reserved tickets", run(workflows.printReservedTickets));
+    // describe(
+    //   "Projects can print premined tickets before a payment has been made to it",
+    //   run(workflows.printPreminedTickets)
+    // );
+    // describe(
+    //   "Issues tickets and honors preference",
+    //   run(workflows.issueTickets)
+    // );
+    // describe("Tap funds up to the configured target", run(workflows.tap));
+    // describe(
+    //   "A fee should be taken into governance's project when a project taps funds",
+    //   run(workflows.takeFee)
+    // );
+    // describe("Reconfigures a project", run(workflows.reconfigure));
+    // describe(
+    //   "A funding cycle configuration can have a limit",
+    //   run(workflows.limit)
+    // );
+    // describe(
+    //   "A funding cycle configuration can have a duration of 0",
+    //   run(workflows.zeroDuration)
+    // );
+    // describe(
+    //   "A funding cycle configuration can be non recurring",
+    //   run(workflows.nonRecurring)
+    // );
+    // describe(
+    //   "Ballot must be approved for reconfiguration to become active",
+    //   run(workflows.approvedBallot)
+    // );
+    // describe(
+    //   "Reconfiguration that fails a ballot should be ignored",
+    //   run(workflows.failedBallot)
+    // );
+    // describe(
+    //   "Reconfiguration proposed after a failed configuration should obide by the ballot duration",
+    //   run(workflows.iteratedFailedBallot)
+    // );
+    // describe("Migrate from one Terminal to another", run(workflows.migrate));
+    // describe(
+    //   "Operators can be given permissions",
+    //   run(workflows.operatorPermissions)
+    // );
+    // describe(
+    //   "Set and update payout mods, honoring locked status",
+    //   run(workflows.setPayoutMods)
+    // );
+    // describe(
+    //   "Set and update ticket mods, honoring locked status",
+    //   run(workflows.setTicketMods)
+    // );
+    // describe(
+    //   "A new governance can be appointed and accepted",
+    //   run(workflows.governance)
+    // );
+    // describe(
+    //   "Governance can set a new fee for future configurations",
+    //   run(workflows.setFee)
+    // );
+    // describe(
+    //   "Currencies rates are converted to/from correctly",
+    //   run(workflows.currencyConversion)
+    // );
+    // describe(
+    //   "Transfer ownership over a project",
+    //   run(workflows.transferProjectOwnership)
+    // );
+    // describe(
+    //   "Direct payment addresses can be deployed to add an fundable address to a project",
+    //   run(workflows.directPaymentAddresses)
+    // );
+    // describe(
+    //   "A project can be created without a payment terminal, and can set one after",
+    //   run(workflows.setTerminal)
+    // );
+    // describe(
+    //   "Proxy payment addresses can be deployed to add an fundable address to a project",
+    //   run(workflows.proxyPaymentAddresses)
+    // );
+    // describe("Prints reserved tickets", run(workflows.printReservedTickets));
+    // describe(
+    //   "Prints reserved tickets from zero to full",
+    //   run(workflows.printReservedTicketsFromZeroToFull)
+    // );
+    // describe(
+    //   "Prints reserved tickets can change once printed",
+    //   run(workflows.printReservedTicketsCanChangeOncePrinted)
+    // );
   }
 };

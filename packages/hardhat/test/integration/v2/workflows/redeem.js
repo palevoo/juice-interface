@@ -92,9 +92,17 @@ module.exports = [
         max: constants.MaxUint16
       });
 
+      const weightMultiplier = BigNumber.from(0);
+      // randomBigNumberFn({
+      //   max: constants.MaxWeightMultiplier
+      // });
+
+      // No max supply.
+      const maxTicketSupply = BigNumber.from(0);
+
       await executeFn({
         caller: deployer,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "deploy",
         args: [
           owner.address,
@@ -117,7 +125,12 @@ module.exports = [
           {
             reservedRate,
             bondingCurveRate,
-            reconfigurationBondingCurveRate
+            reconfigurationBondingCurveRate,
+            weightMultiplier
+          },
+          {
+            maxTicketSupply,
+            overflowAllowance: randomBigNumberFn()
           },
           [],
           []
@@ -135,7 +148,9 @@ module.exports = [
         paymentValue1,
         paymentValue2,
         paymentValue3,
-        initialContractBalance: await getBalanceFn(contracts.terminalV1.address),
+        initialContractBalance: await getBalanceFn(
+          contracts.terminalV2.address
+        ),
         ballot
       };
     }
@@ -157,8 +172,8 @@ module.exports = [
 
       await executeFn({
         caller: payer,
-        contract: contracts.terminalV1,
-        fn: "pay",
+        contract: contracts.terminalV2,
+        fn: "pay(uint256,address,string,bool)",
         args: [
           expectedProjectId,
           ticketBeneficiary1.address,
@@ -197,7 +212,7 @@ module.exports = [
 
       await executeFn({
         caller: ticketBeneficiary1,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "redeem",
         args: [
           ticketBeneficiary1.address,
@@ -208,8 +223,8 @@ module.exports = [
           randomBoolFn()
         ],
         revert: expectedRedeemableTicketsOfTicketBeneficiary1.eq(0)
-          ? "TerminalV1::claimableOverflow: INSUFFICIENT_TICKETS"
-          : "TerminalV1::redeem: NO_OP"
+          ? "TerminalV2::redeem: INSUFFICIENT_TICKETS"
+          : "TerminalV2::redeem: NO_OP"
       });
 
       return {
@@ -242,8 +257,8 @@ module.exports = [
 
       await executeFn({
         caller: payer,
-        contract: contracts.terminalV1,
-        fn: "pay",
+        contract: contracts.terminalV2,
+        fn: "pay(uint256,address,string,bool)",
         args: [
           expectedProjectId,
           ticketBeneficiary2.address,
@@ -284,8 +299,8 @@ module.exports = [
 
       await executeFn({
         caller: payer,
-        contract: contracts.terminalV1,
-        fn: "pay",
+        contract: contracts.terminalV2,
+        fn: "pay(uint256,address,string,bool)",
         args: [
           expectedProjectId,
           ticketBeneficiary3.address,
@@ -308,14 +323,14 @@ module.exports = [
     }) =>
       checkFn({
         caller: randomAddressFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "balanceOf",
         args: [expectedProjectId],
         expect: paymentValue1.add(paymentValue2).add(paymentValue3)
       })
   },
   {
-    description: "The terminalV1 should have the funds from the payments",
+    description: "The terminalV2 should have the funds from the payments",
     fn: ({
       contracts,
       verifyBalanceFn,
@@ -327,7 +342,7 @@ module.exports = [
       }
     }) =>
       verifyBalanceFn({
-        address: contracts.terminalV1.address,
+        address: contracts.terminalV2.address,
         expect: initialContractBalance.add(
           paymentValue1.add(paymentValue2).add(paymentValue3)
         )
@@ -363,6 +378,7 @@ module.exports = [
       checkFn,
       randomSignerFn,
       constants,
+      BigNumber,
       local: {
         expectedProjectId,
         ticketBeneficiary1,
@@ -395,22 +411,20 @@ module.exports = [
 
       await checkFn({
         caller: randomSignerFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "claimableOverflowOf",
-        args: [
-          ticketBeneficiary1.address,
-          expectedProjectId,
-          redeemableTicketsOfTicketBeneficiary1
-        ],
-        expect: bondingCurveFn({
-          rate: bondingCurveRate,
-          count: expectedRedeemableTicketsOfTicketBeneficiary1,
-          total: expectedTotalTickets,
-          overflow: paymentValue1
-            .add(paymentValue2)
-            .add(paymentValue3)
-            .sub(target)
-        }),
+        args: [expectedProjectId, redeemableTicketsOfTicketBeneficiary1],
+        expect: bondingCurveRate.eq(0)
+          ? BigNumber.from(0)
+          : bondingCurveFn({
+              rate: bondingCurveRate,
+              count: expectedRedeemableTicketsOfTicketBeneficiary1,
+              total: expectedTotalTickets,
+              overflow: paymentValue1
+                .add(paymentValue2)
+                .add(paymentValue3)
+                .sub(target)
+            }),
         // Allow some wiggle room due to possible division precision errors.
         plusMinus: {
           amount: 100
@@ -452,8 +466,7 @@ module.exports = [
       );
 
       // Get the stored claimable amount.
-      const redeemableAmountOfTicketBeneficiary1 = await contracts.terminalV1.claimableOverflowOf(
-        ticketBeneficiary1.address,
+      const redeemableAmountOfTicketBeneficiary1 = await contracts.terminalV2.claimableOverflowOf(
         expectedProjectId,
         redeemableTicketsOfTicketBeneficiary1
       );
@@ -462,7 +475,7 @@ module.exports = [
 
       await executeFn({
         caller: ticketBeneficiary1,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "redeem",
         args: [
           ticketBeneficiary1.address,
@@ -472,7 +485,7 @@ module.exports = [
           redeemBeneficiary1,
           randomBoolFn()
         ],
-        revert: expectNoOp && "TerminalV1::redeem: NO_OP"
+        revert: expectNoOp && "TerminalV2::redeem: NO_OP"
       });
 
       // If the requested reverted with no op, the tickets wont be redeemed.
@@ -541,7 +554,7 @@ module.exports = [
       }
     }) =>
       verifyBalanceFn({
-        address: contracts.terminalV1.address,
+        address: contracts.terminalV2.address,
         expect: initialContractBalance
           .add(paymentValue1.add(paymentValue2).add(paymentValue3))
           .sub(redeemableAmountOfTicketBeneficiary1)
@@ -593,7 +606,7 @@ module.exports = [
       incrementFundingCycleIdFn();
       await executeFn({
         caller: owner,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "configure",
         args: [
           expectedProjectId,
@@ -619,7 +632,12 @@ module.exports = [
             }),
             reconfigurationBondingCurveRate: randomBigNumberFn({
               max: constants.MaxPercent
-            })
+            }),
+            weightMultiplier: BigNumber.from(0)
+          },
+          {
+            maxTicketSupply: BigNumber.from(0),
+            overflowAllowance: BigNumber.from(0)
           },
           [],
           []
@@ -635,6 +653,7 @@ module.exports = [
       bondingCurveFn,
       checkFn,
       randomSignerFn,
+      BigNumber,
       local: {
         expectedProjectId,
         ticketBeneficiary2,
@@ -657,25 +676,23 @@ module.exports = [
 
       await checkFn({
         caller: randomSignerFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "claimableOverflowOf",
-        args: [
-          ticketBeneficiary2.address,
-          expectedProjectId,
-          redeemableTicketsOfTicketBeneficiary2
-        ],
-        expect: bondingCurveFn({
-          rate: reconfigurationBondingCurveRate,
-          count: redeemableTicketsOfTicketBeneficiary2,
-          total: expectedTotalTickets
-            .sub(redeemableTicketsOfTicketBeneficiary1)
-            .add(leftoverTicketsOfTicketBeneficiary1),
-          overflow: paymentValue1
-            .add(paymentValue2)
-            .add(paymentValue3)
-            .sub(target)
-            .sub(redeemableAmountOfTicketBeneficiary1)
-        }),
+        args: [expectedProjectId, redeemableTicketsOfTicketBeneficiary2],
+        expect: reconfigurationBondingCurveRate.eq(0)
+          ? BigNumber.from(0)
+          : bondingCurveFn({
+              rate: reconfigurationBondingCurveRate,
+              count: redeemableTicketsOfTicketBeneficiary2,
+              total: expectedTotalTickets
+                .sub(redeemableTicketsOfTicketBeneficiary1)
+                .add(leftoverTicketsOfTicketBeneficiary1),
+              overflow: paymentValue1
+                .add(paymentValue2)
+                .add(paymentValue3)
+                .sub(target)
+                .sub(redeemableAmountOfTicketBeneficiary1)
+            }),
         // Allow some wiggle room due to possible division precision errors.
         plusMinus: {
           amount: 100
@@ -714,8 +731,7 @@ module.exports = [
       );
 
       // Get the stored claimable amount.
-      const redeemableAmountOfTicketBeneficiary2 = await contracts.terminalV1.claimableOverflowOf(
-        ticketBeneficiary2.address,
+      const redeemableAmountOfTicketBeneficiary2 = await contracts.terminalV2.claimableOverflowOf(
         expectedProjectId,
         redeemableTicketsOfTicketBeneficiary2
       );
@@ -724,7 +740,7 @@ module.exports = [
 
       await executeFn({
         caller: ticketBeneficiary2,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "redeem",
         args: [
           ticketBeneficiary2.address,
@@ -734,7 +750,7 @@ module.exports = [
           redeemBeneficiary2,
           randomBoolFn()
         ],
-        revert: expectNoOp && "TerminalV1::redeem: NO_OP"
+        revert: expectNoOp && "TerminalV2::redeem: NO_OP"
       });
 
       // If the requested reverted with no op, the tickets wont be redeemed.
@@ -804,7 +820,7 @@ module.exports = [
       }
     }) =>
       verifyBalanceFn({
-        address: contracts.terminalV1.address,
+        address: contracts.terminalV2.address,
         expect: initialContractBalance
           .add(paymentValue1.add(paymentValue2).add(paymentValue3))
           .sub(redeemableAmountOfTicketBeneficiary1)
@@ -854,6 +870,7 @@ module.exports = [
       bondingCurveFn,
       checkFn,
       randomSignerFn,
+      BigNumber,
       local: {
         expectedProjectId,
         ticketBeneficiary3,
@@ -879,28 +896,26 @@ module.exports = [
 
       await checkFn({
         caller: randomSignerFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "claimableOverflowOf",
-        args: [
-          ticketBeneficiary3.address,
-          expectedProjectId,
-          redeemableTicketsOfTicketBeneficiary3
-        ],
-        expect: bondingCurveFn({
-          rate: bondingCurveRate,
-          count: redeemableTicketsOfTicketBeneficiary3,
-          total: expectedTotalTickets
-            .sub(redeemableTicketsOfTicketBeneficiary1)
-            .add(leftoverTicketsOfTicketBeneficiary1)
-            .sub(redeemableTicketsOfTicketBeneficiary2)
-            .add(leftoverTicketsOfTicketBeneficiary2),
-          overflow: paymentValue1
-            .add(paymentValue2)
-            .add(paymentValue3)
-            .sub(target)
-            .sub(redeemableAmountOfTicketBeneficiary1)
-            .sub(redeemableAmountOfTicketBeneficiary2)
-        }),
+        args: [expectedProjectId, redeemableTicketsOfTicketBeneficiary3],
+        expect: bondingCurveRate.eq(0)
+          ? BigNumber.from(0)
+          : bondingCurveFn({
+              rate: bondingCurveRate,
+              count: redeemableTicketsOfTicketBeneficiary3,
+              total: expectedTotalTickets
+                .sub(redeemableTicketsOfTicketBeneficiary1)
+                .add(leftoverTicketsOfTicketBeneficiary1)
+                .sub(redeemableTicketsOfTicketBeneficiary2)
+                .add(leftoverTicketsOfTicketBeneficiary2),
+              overflow: paymentValue1
+                .add(paymentValue2)
+                .add(paymentValue3)
+                .sub(target)
+                .sub(redeemableAmountOfTicketBeneficiary1)
+                .sub(redeemableAmountOfTicketBeneficiary2)
+            }),
         // Allow some wiggle room due to possible division precision errors.
         plusMinus: {
           amount: 100
@@ -939,8 +954,7 @@ module.exports = [
       );
 
       // Get the stored claimable amount.
-      const redeemableAmountOfTicketBeneficiary3 = await contracts.terminalV1.claimableOverflowOf(
-        ticketBeneficiary3.address,
+      const redeemableAmountOfTicketBeneficiary3 = await contracts.terminalV2.claimableOverflowOf(
         expectedProjectId,
         redeemableTicketsOfTicketBeneficiary3
       );
@@ -949,7 +963,7 @@ module.exports = [
 
       await executeFn({
         caller: ticketBeneficiary3,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "redeem",
         args: [
           ticketBeneficiary3.address,
@@ -959,7 +973,7 @@ module.exports = [
           redeemBeneficiary3,
           randomBoolFn()
         ],
-        revert: expectNoOp && "TerminalV1::redeem: NO_OP"
+        revert: expectNoOp && "TerminalV2::redeem: NO_OP"
       });
 
       // If the requested reverted with no op, the tickets wont be redeemed.
@@ -1015,7 +1029,7 @@ module.exports = [
   },
   {
     description:
-      "The terminalV1 should no longer have the funds sent to the second redeem beneificiary",
+      "The terminalV2 should no longer have the funds sent to the second redeem beneificiary",
     fn: ({
       contracts,
       verifyBalanceFn,
@@ -1030,7 +1044,7 @@ module.exports = [
       }
     }) =>
       verifyBalanceFn({
-        address: contracts.terminalV1.address,
+        address: contracts.terminalV2.address,
         expect: initialContractBalance
           .add(paymentValue1.add(paymentValue2).add(paymentValue3))
           .sub(redeemableAmountOfTicketBeneficiary1)
@@ -1048,7 +1062,7 @@ module.exports = [
     }) =>
       executeFn({
         caller: randomSignerFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "printReservedTickets",
         args: [expectedProjectId]
       })
@@ -1137,7 +1151,7 @@ module.exports = [
     }) =>
       checkFn({
         caller: randomSignerFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "currentOverflowOf",
         args: [expectedProjectId],
         expect: paymentValue1
@@ -1162,6 +1176,7 @@ module.exports = [
       checkFn,
       randomSignerFn,
       bondingCurveFn,
+      BigNumber,
       local: { expectedProjectId, owner, bondingCurveRate }
     }) => {
       const reservedTicketBalance = await contracts.ticketBooth.balanceOf(
@@ -1171,15 +1186,21 @@ module.exports = [
 
       await checkFn({
         caller: randomSignerFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "claimableOverflowOf",
-        args: [owner.address, expectedProjectId, reservedTicketBalance],
-        expect: bondingCurveFn({
-          rate: bondingCurveRate,
-          count: reservedTicketBalance,
-          total: await contracts.ticketBooth.totalSupplyOf(expectedProjectId),
-          overflow: await contracts.terminalV1.currentOverflowOf(expectedProjectId)
-        }),
+        args: [expectedProjectId, reservedTicketBalance],
+        expect: bondingCurveRate.eq(0)
+          ? BigNumber.from(0)
+          : bondingCurveFn({
+              rate: bondingCurveRate,
+              count: reservedTicketBalance,
+              total: await contracts.ticketBooth.totalSupplyOf(
+                expectedProjectId
+              ),
+              overflow: await contracts.terminalV2.currentOverflowOf(
+                expectedProjectId
+              )
+            }),
         // Allow some wiggle room due to possible division precision errors.
         plusMinus: {
           amount: 100
@@ -1210,8 +1231,7 @@ module.exports = [
         redeemBeneficiary4
       );
 
-      const claimableOverflow = await contracts.terminalV1.claimableOverflowOf(
-        owner.address,
+      const claimableOverflow = await contracts.terminalV2.claimableOverflowOf(
         expectedProjectId,
         reservedTicketBalance
       );
@@ -1220,7 +1240,7 @@ module.exports = [
 
       await executeFn({
         caller: owner,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "redeem",
         args: [
           owner.address,
@@ -1230,7 +1250,7 @@ module.exports = [
           redeemBeneficiary4,
           randomBoolFn()
         ],
-        revert: expectNoOp && "TerminalV1::redeem: NO_OP"
+        revert: expectNoOp && "TerminalV2::redeem: NO_OP"
       });
 
       // If the requested reverted with no op, the tickets wont be redeemed.

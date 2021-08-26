@@ -1,5 +1,5 @@
 /** 
-  Deploying a project through the TerminalV1 should create a project, configure a funding cycle, and set mods.
+  Deploying a project through the TerminalV2 should create a project, configure a funding cycle, and set mods.
 
   These steps can all be taken seperately without calling `deploy`.
 */
@@ -48,12 +48,17 @@ module.exports = [
       const reconfigurationBondingCurveRate = randomBigNumberFn({
         max: constants.MaxPercent
       });
+      const weightMultiplier = randomBigNumberFn({
+        max: constants.MaxWeightMultiplier
+      });
+      const maxTicketSupply = randomBigNumberFn();
+      const overflowAllowance = randomBigNumberFn();
 
       // These can be whatever.
       const payoutMods = [];
       const ticketMods = [];
 
-      const contract = contracts.terminalV1;
+      const contract = contracts.terminalV2;
       const terminal = contract;
 
       await executeFn({
@@ -75,7 +80,12 @@ module.exports = [
           {
             reservedRate,
             bondingCurveRate,
-            reconfigurationBondingCurveRate
+            reconfigurationBondingCurveRate,
+            weightMultiplier
+          },
+          {
+            maxTicketSupply,
+            overflowAllowance
           },
           payoutMods,
           ticketMods
@@ -95,7 +105,8 @@ module.exports = [
         reservedRate,
         bondingCurveRate,
         reconfigurationBondingCurveRate,
-        terminal
+        terminal,
+        weightMultiplier
       };
     }
   },
@@ -118,11 +129,14 @@ module.exports = [
         ballot,
         reservedRate,
         bondingCurveRate,
-        reconfigurationBondingCurveRate
+        reconfigurationBondingCurveRate,
+        weightMultiplier
       }
     }) => {
       // Pack the metadata as expected.
       let expectedPackedMetadata = BigNumber.from(0);
+      expectedPackedMetadata = expectedPackedMetadata.add(weightMultiplier);
+      expectedPackedMetadata = expectedPackedMetadata.shl(8);
       expectedPackedMetadata = expectedPackedMetadata.add(
         reconfigurationBondingCurveRate
       );
@@ -144,8 +158,8 @@ module.exports = [
       // Expect the funding cycle's weight to be the base weight.
       const expectedWeight = await contracts.fundingCycles.BASE_WEIGHT();
 
-      // Expect the funding cycle's fee to be the terminalV1's fee.
-      const expectedFee = await contracts.terminalV1.fee();
+      // Expect the funding cycle's fee to be the terminalV2's fee.
+      const expectedFee = await contracts.terminalV2.fee();
 
       await checkFn({
         caller: randomSignerFn(),
@@ -223,7 +237,7 @@ module.exports = [
   },
   {
     description:
-      "Make sure the terminalV1 got set as the project's current terminal",
+      "Make sure the terminalV2 got set as the project's current terminal",
     fn: ({
       randomSignerFn,
       contracts,

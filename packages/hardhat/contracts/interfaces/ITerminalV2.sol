@@ -16,7 +16,6 @@ struct FundingCycleMetadata2 {
     uint256 reservedRate;
     uint256 bondingCurveRate;
     uint256 reconfigurationBondingCurveRate;
-    bool doesPermitMigration;
     uint256 weightMultiplier;
 }
 
@@ -88,7 +87,7 @@ interface ITerminalV2 {
         address caller
     );
 
-    event AddToBalance(
+    event AddToBalanceWithMemo(
         uint256 indexed projectId,
         uint256 value,
         string memo,
@@ -131,11 +130,10 @@ interface ITerminalV2 {
         view
         returns (uint256);
 
-    function claimableOverflowOf(
-        address _account,
-        uint256 _amount,
-        uint256 _projectId
-    ) external view returns (uint256);
+    function claimableOverflowOf(uint256 _amount, uint256 _projectId)
+        external
+        view
+        returns (uint256);
 
     function fee() external view returns (uint256);
 

@@ -52,9 +52,16 @@ module.exports = [
       // Set a random bonding curve rate.
       const bondingCurveRate = randomBigNumberFn({ max: constants.MaxPercent });
 
+      const weightMultiplier = randomBigNumberFn({
+        max: constants.MaxWeightMultiplier
+      });
+
+      // No max supply.
+      const maxTicketSupply = BigNumber.from(0);
+
       await executeFn({
         caller: deployer,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "deploy",
         args: [
           owner.address,
@@ -78,7 +85,12 @@ module.exports = [
             bondingCurveRate,
             reconfigurationBondingCurveRate: randomBigNumberFn({
               max: constants.MaxPercent
-            })
+            }),
+            weightMultiplier
+          },
+          {
+            maxTicketSupply,
+            overflowAllowance: randomBigNumberFn()
           },
           [],
           []
@@ -91,7 +103,8 @@ module.exports = [
         paymentValue,
         reservedRate,
         bondingCurveRate,
-        target
+        target,
+        weightMultiplier
       };
     }
   },
@@ -133,8 +146,8 @@ module.exports = [
 
       await executeFn({
         caller: payer,
-        contract: contracts.terminalV1,
-        fn: "pay",
+        contract: contracts.terminalV2,
+        fn: "pay(uint256,address,string,bool)",
         args: [
           expectedProjectId,
           ticketBeneficiary.address,
@@ -158,16 +171,20 @@ module.exports = [
         expectedProjectId,
         ticketBeneficiary,
         paymentValue,
-        reservedRate
+        reservedRate,
+        weightMultiplier
       }
     }) => {
-      const expectedTotalTicketBalance = paymentValue.mul(
-        constants.InitialWeightMultiplier
-      );
+      const expectedTotalTicketBalance = paymentValue
+        .mul(constants.InitialWeightMultiplier)
+        .mul(weightMultiplier)
+        .div(constants.WeightMultiplierDivisor);
 
       // The amount of tickets that will be expected to be staked after the first payment.
       const expectedStakedBalance = paymentValue
         .mul(constants.InitialWeightMultiplier)
+        .mul(weightMultiplier)
+        .div(constants.WeightMultiplierDivisor)
         .mul(constants.MaxPercent.sub(reservedRate))
         .div(constants.MaxPercent);
 
@@ -541,7 +558,7 @@ module.exports = [
 
       // If the amount expected to be claimed is zero.
       const expectedClaimedAmountIsZero = (
-        await contracts.terminalV1.claimableOverflowOf(
+        await contracts.terminalV2.claimableOverflowOf(
           ticketBeneficiary.address,
           expectedProjectId,
           ticketsToRedeem
@@ -550,7 +567,7 @@ module.exports = [
 
       await executeFn({
         caller: ticketBeneficiary,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "redeem",
         args: [
           ticketBeneficiary.address,
@@ -563,7 +580,7 @@ module.exports = [
         revert:
           // No op if no tickets are being redeemed, or if there's no amount to claim.
           ticketsToRedeem.eq(0) || expectedClaimedAmountIsZero
-            ? "TerminalV1::redeem: NO_OP"
+            ? "TerminalV2::redeem: NO_OP"
             : amountToLock.gt(0) && "TicketBooth::redeem: INSUFFICIENT_FUNDS"
       });
 
@@ -628,7 +645,7 @@ module.exports = [
     }) => {
       await executeFn({
         caller: ticketBeneficiary,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "redeem",
         args: [
           ticketBeneficiary.address,
@@ -640,10 +657,10 @@ module.exports = [
         ],
         revert:
           ticketsToRedeem.eq(0) || expectedClaimedAmountIsZero
-            ? "TerminalV1::redeem: NO_OP"
+            ? "TerminalV2::redeem: NO_OP"
             : // If the locked amount is zero, the tickets have already been redeemed.
               amountToLock.eq(0) &&
-              "TerminalV1::claimableOverflow: INSUFFICIENT_TICKETS"
+              "TerminalV2::claimableOverflow: INSUFFICIENT_TICKETS"
       });
     }
   },

@@ -21,8 +21,8 @@ module.exports = [
       // The address that will own a project.
       const owner = randomSignerFn();
 
-      // Use the terminalV1 as the terminal.
-      const terminal = contracts.terminalV1.address;
+      // Use the terminalV2 as the terminal.
+      const terminal = contracts.terminalV2.address;
 
       const expectedProjectId = incrementProjectIdFn();
 
@@ -532,8 +532,8 @@ module.exports = [
 
       await executeFn({
         caller: payer,
-        contract: contracts.terminalV1,
-        fn: "pay",
+        contract: contracts.terminalV2,
+        fn: "pay(uint256,address,string,bool)",
         args: [
           expectedProjectId,
           randomAddressFn(),
@@ -564,7 +564,7 @@ module.exports = [
       const currency = 0;
       await executeFn({
         caller: owner,
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "configure",
         args: [
           expectedProjectId,
@@ -589,7 +589,14 @@ module.exports = [
             }),
             reconfigurationBondingCurveRate: randomBigNumberFn({
               max: constants.MaxPercent
+            }),
+            weightMultiplier: randomBigNumberFn({
+              max: constants.MaxWeightMultiplier
             })
+          },
+          {
+            maxTicketSupply: randomBigNumberFn(),
+            overflowAllowance: randomBigNumberFn()
           },
           [],
           []
@@ -609,7 +616,7 @@ module.exports = [
     }) =>
       executeFn({
         caller: randomSignerFn(),
-        contract: contracts.terminalV1,
+        contract: contracts.terminalV2,
         fn: "tap",
         args: [expectedProjectId, paymentValue, currency, paymentValue]
       })
