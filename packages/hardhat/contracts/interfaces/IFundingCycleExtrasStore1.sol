@@ -2,10 +2,11 @@
 pragma solidity 0.8.6;
 
 import "./ITicketBooth.sol";
+import "./IPayGate.sol";
 
 struct FundingCycleExtras1 {
-    uint256 maxTicketSupply;
     uint256 overflowAllowance;
+    IPayGate payGate;
 }
 
 interface IFundingCycleExtrasStore1 {
@@ -23,15 +24,15 @@ interface IFundingCycleExtrasStore1 {
         address caller
     );
 
-    function maxTicketSupplyOf(uint256 _projectId, uint256 _configuration)
-        external
-        view
-        returns (uint256);
-
     function overflowAllowanceOf(uint256 _projectId, uint256 _configuration)
         external
         view
         returns (uint256);
+
+    function payGateOf(uint256 _projectId, uint256 _configuration)
+        external
+        view
+        returns (IPayGate);
 
     function set(
         uint256 _projectId,

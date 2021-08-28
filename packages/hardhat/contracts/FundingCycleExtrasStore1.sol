@@ -14,15 +14,13 @@ contract FundingCycleExtrasStore1 is
 {
     // --- public stored properties --- //
 
-    // Max supply of tickets that can be in circulation for each funding cycle configuration.
-    mapping(uint256 => mapping(uint256 => uint256))
-        public
-        override maxTicketSupplyOf;
-
     // The amount of overflow that a project is allowed to tap into itself on-demand.
     mapping(uint256 => mapping(uint256 => uint256))
         public
         override overflowAllowanceOf;
+
+    // The amount of overflow that a project is allowed to tap into itself on-demand.
+    mapping(uint256 => mapping(uint256 => IPayGate)) public override payGateOf;
 
     // --- external transactions --- //
 
@@ -49,14 +47,15 @@ contract FundingCycleExtrasStore1 is
         uint256 _configuration,
         FundingCycleExtras1 memory _extras
     ) external override onlyTerminal(_projectId) {
-        if (_extras.maxTicketSupply > 0)
-            // Set the value.
-            maxTicketSupplyOf[_projectId][_configuration] = _extras
-                .maxTicketSupply;
-
-        if (_extras.overflowAllowance > 0)
+        if (
+            _extras.overflowAllowance !=
+            overflowAllowanceOf[_projectId][_configuration]
+        )
             overflowAllowanceOf[_projectId][_configuration] = _extras
                 .overflowAllowance;
+
+        if (_extras.payGate != payGateOf[_projectId][_configuration])
+            payGateOf[_projectId][_configuration] = _extras.payGate;
 
         emit Set(_projectId, _configuration, _extras, msg.sender);
     }

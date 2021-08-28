@@ -318,7 +318,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-        @dev _metadata.weightMultiplier A value to multiply the funding cycle's weight to when calculating the amount of tokens to mint per payment received. This value will be divided by 1E12.
       @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
         @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
         @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
@@ -353,7 +352,10 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         );
 
         // Set the extras for this configuration if values exist.
-        if (_extras.maxTicketSupply > 0 || _extras.overflowAllowance > 0)
+        if (
+            _extras.payGate != IPayGate(address(0)) ||
+            _extras.overflowAllowance > 0
+        )
             fundingCycleExtrasStore1.set(
                 _projectId,
                 _fundingCycle.configured,
@@ -403,7 +405,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-        @dev _metadata.weightMultiplier A value to multiply the funding cycle's weight to when calculating the amount of tokens to mint per payment received. This value will be divided by 1E12.
       @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
         @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
         @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
@@ -454,7 +455,10 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         );
 
         // Set the extras for this configuration if values exist.
-        if (_extras.maxTicketSupply > 0 || _extras.overflowAllowance > 0)
+        if (
+            _extras.payGate > IPayGate(address(0)) ||
+            _extras.overflowAllowance > 0
+        )
             fundingCycleExtrasStore1.set(
                 _projectId,
                 _fundingCycle.configured,
@@ -894,22 +898,18 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
       @param _projectId The ID of the project to which the funds received belong.
     */
     function addToBalance(uint256 _projectId) external payable override {
-        _addToBalance(_projectId, msg.value, "");
-    }
+        // The amount must be positive.
+        require(msg.value > 0, "TerminalV1::addToBalance: BAD_AMOUNT");
+        // Set the processed ticket tracker if this isnt the current terminal for the project.
+        if (terminalDirectory.terminalOf(_projectId) != this)
+            // Set the tracker to be the new total supply.
+            _processedTicketTrackerOf[_projectId] = int256(
+                ticketBooth.totalSupplyOf(_projectId)
+            );
 
-    /** 
-      @notice 
-      Receives and allocates funds belonging to the specified project, with a memo.
-
-      @param _projectId The ID of the project to which the funds received belong.
-      @param _memo A memo to associate with the emitted event.
-    */
-    function addToBalance(uint256 _projectId, string calldata _memo)
-        public
-        payable
-        override
-    {
-        _addToBalance(_projectId, msg.value, _memo);
+        // Set the balance.
+        balanceOf[_projectId] = balanceOf[_projectId] + msg.value;
+        emit AddToBalance(_projectId, msg.value, msg.sender);
     }
 
     /**
@@ -1209,39 +1209,50 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Get a reference to the current funding cycle for the project.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
+        // Get a reference to the current pay gate.
+        IPayGate _payGate = fundingCycleExtrasStore1.payGateOf(
+            _projectId,
+            _fundingCycle.configured
+        );
+
+        // Use the funding cycle's reserved rate if it exists. Otherwise don't set a reserved rate.
+        // The reserved rate is stored in bits 8-15 of the metadata property.
+        uint256 _reservedRate;
         // Determine which weight to use for calculating the number of tickets to print.
         uint256 _weight;
+
         // If a funding cycle doesn't yet exist, use the base weight.
         if (_fundingCycle.number == 0) {
             _weight = fundingCycles.BASE_WEIGHT();
+            _reservedRate = 0;
         } else {
+            // Get weight
+            (
+                uint256 _payWeight,
+                uint256 _payReservedRate,
+                bool _disallow
+            ) = _payGate == IPayGate(address(0))
+                    ? (
+                        _fundingCycle.weight,
+                        uint256(uint8(_fundingCycle.metadata >> 8)),
+                        false
+                    )
+                    : _payGate.check(
+                        _projectId,
+                        _amount,
+                        _beneficiary,
+                        _fundingCycle
+                    );
+
+            require(!_disallow, "TerminalV2::_pay: DISALLOWED");
+
             // Use the weight override if it exists.
-            _weight = uint256(uint80(_fundingCycle.metadata >> 32)) > 0
-                ? PRBMath.mulDiv(
-                    _fundingCycle.weight,
-                    uint256(uint80(_fundingCycle.metadata >> 32)),
-                    1E18
-                    // Use the funding cycle's weight derived from compounding discount rates.
-                )
-                : _fundingCycle.weight;
+            _weight = _payWeight;
+            _reservedRate = _payReservedRate;
         }
 
         // Multiply the amount by the funding cycle's weight to determine the amount of tickets to print.
         uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, _weight);
-
-        // Use the funding cycle's reserved rate if it exists. Otherwise don't set a reserved rate.
-        // The reserved rate is stored in bits 8-15 of the metadata property.
-        uint256 _reservedRate = _fundingCycle.number == 0
-            ? 0
-            : uint256(uint8(_fundingCycle.metadata >> 8));
-
-        // Make sure the weighted amount respects the preconfigured max supply.
-        _weightedAmount = _weightedAmountWithinMaxSupply(
-            _projectId,
-            _fundingCycle.configured,
-            _reservedRate,
-            _weightedAmount
-        );
 
         // Only print the tickets that are unreserved.
         uint256 _unreservedWeightedAmount = PRBMath.mulDiv(
@@ -1403,12 +1414,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_RECONFIGURATION_BONDING_CURVE_RATE"
         );
 
-        // The reconfiguration bonding curve rate must b.
-        require(
-            _metadata.weightMultiplier <= type(uint80).max,
-            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_WEIGHT_MULTIPLIER"
-        );
-
         // version 0 in the first 8 bytes.
         packed = 0;
         // reserved rate in bits 8-15.
@@ -1417,8 +1422,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         packed |= _metadata.bondingCurveRate << 16;
         // reconfiguration bonding curve rate in bits 24-31.
         packed |= _metadata.reconfigurationBondingCurveRate << 24;
-        // weight override in bits 32-111.
-        packed |= _metadata.weightMultiplier << 32;
     }
 
     /** 
@@ -1451,81 +1454,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         _terminal == this // Use the local pay call.
             ? _pay(1, feeAmount, _beneficiary, 0, _memo, false) // Use the external pay call of the correct terminal.
             : _terminal.pay{value: feeAmount}(1, _beneficiary, _memo, false);
-    }
-
-    /** 
-      @notice 
-      Applies the preconfigured max supply of tickets within a given configuration to the provided weighted amount.
-
-      @param _projectId The ID of the project to check for the weighted amount within the max supply.
-      @param _configuration The funding cycle configuration to check for the weighted amount within the max supply.
-      @param _reservedRate The reserved rate to use when finding the correct value.
-      @param _weightedAmount The original weighted amount.
-
-      @return The weighted amount within the preconfigured max supply.
-    */
-    function _weightedAmountWithinMaxSupply(
-        uint256 _projectId,
-        uint256 _configuration,
-        uint256 _reservedRate,
-        uint256 _weightedAmount
-    ) private view returns (uint256) {
-        // Get the max ticket supply.
-        uint256 _maxTicketSupply = fundingCycleExtrasStore1.maxTicketSupplyOf(
-            _projectId,
-            _configuration
-        );
-
-        // If no max is set, return the weighted amount.
-        if (_maxTicketSupply == 0) return _weightedAmount;
-
-        // Get the total printed supply.
-        uint256 _totalPrintedSupply = ticketBooth.totalSupplyOf(_projectId);
-
-        // The outstanding supply is the total printed supply plus any allocated reserved tickets.
-        uint256 _totalOutstandingSupply = _totalPrintedSupply +
-            _reservedTicketAmountFrom(
-                _processedTicketTrackerOf[_projectId],
-                _reservedRate,
-                _totalPrintedSupply
-            );
-
-        // If the outstanding amount has already been exceeded, return 0.
-        if (_totalOutstandingSupply > _maxTicketSupply) return 0;
-
-        // If there aren't enough tickets to fulfill the full weight, print all that is available.
-        return
-            _weightedAmount > _maxTicketSupply - _totalOutstandingSupply
-                ? _maxTicketSupply - _totalOutstandingSupply
-                : _weightedAmount;
-    }
-
-    /** 
-      @notice 
-      Receives and allocates funds belonging to the specified project, with a memo.
-
-      @param _projectId The ID of the project to which the funds received belong.
-      @param _amount The amount being added.
-      @param _memo A memo to associate with the emitted event.
-    */
-    function _addToBalance(
-        uint256 _projectId,
-        uint256 _amount,
-        string memory _memo
-    ) private {
-        // The amount must be positive.
-        require(_amount > 0, "TerminalV2::_addToBalance: NO_OP");
-
-        // Set the processed ticket tracker if this isnt the current terminal for the project.
-        if (terminalDirectory.terminalOf(_projectId) != this)
-            // Set the tracker to be the new total supply.
-            _processedTicketTrackerOf[_projectId] = int256(
-                ticketBooth.totalSupplyOf(_projectId)
-            );
-
-        // Set the balance.
-        balanceOf[_projectId] = balanceOf[_projectId] + _amount;
-        emit AddToBalanceWithMemo(_projectId, _amount, _memo, msg.sender);
     }
 
     /** 

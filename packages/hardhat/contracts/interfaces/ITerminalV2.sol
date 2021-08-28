@@ -87,13 +87,6 @@ interface ITerminalV2 {
         address caller
     );
 
-    event AddToBalanceWithMemo(
-        uint256 indexed projectId,
-        uint256 value,
-        string memo,
-        address caller
-    );
-
     event TransferGovernance(address governance);
 
     function governance() external view returns (address);
@@ -185,10 +178,6 @@ interface ITerminalV2 {
     function printReservedTickets(uint256 _projectId)
         external
         returns (uint256 reservedTicketsToPrint);
-
-    function addToBalance(uint256 _projectId, string calldata _memo)
-        external
-        payable;
 
     function transferGovernance(address _newGovernance) external;
 
