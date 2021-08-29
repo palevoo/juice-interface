@@ -1,8 +1,8 @@
 const shouldBehaveLike = require("./behaviors");
 
 let snapshotId;
-module.exports = function () {
-  beforeEach(async function () {
+module.exports = function() {
+  beforeEach(async function() {
     snapshotId = await this.snapshotFn();
     // Mark the start time of each test.
     await this.setTimeMarkFn();
@@ -29,10 +29,10 @@ module.exports = function () {
     shouldBehaveLike.proxyPaymentAddressManager
   );
   // Depends on everything.
-  describe("TerminalV1", shouldBehaveLike.terminalV1);
+  describe.only("TerminalV1", shouldBehaveLike.terminalV1);
 
   // After each test, restore the contract state.
-  afterEach(async function () {
+  afterEach(async function() {
     await this.restoreFn(snapshotId);
   });
 };

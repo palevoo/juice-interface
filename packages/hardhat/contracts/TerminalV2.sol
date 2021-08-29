@@ -71,11 +71,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     /// @notice The directory of terminals.
     ITerminalDirectory public immutable override terminalDirectory;
 
-    /// @notice The contract that stores each project's configured max supply of tickets.
-    IFundingCycleExtrasStore1
-        public immutable
-        override fundingCycleExtrasStore1;
-
     // --- public stored properties --- //
 
     /// @notice The amount of ETH that each project is responsible for.
@@ -110,7 +105,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
         // There's no overflow if there's no funding cycle.
-        if (_fundingCycle.id == 0) return 0;
+        if (_fundingCycle.number == 0) return 0;
 
         return _overflowFrom(_fundingCycle);
     }
@@ -138,8 +133,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             );
     }
 
-    // --- public views --- //
-
     /**
       @notice 
       The amount of tokens that can be claimed by the given address.
@@ -152,7 +145,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
       @return amount The amount of tokens that can be claimed.
     */
     function claimableOverflowOf(uint256 _projectId, uint256 _count)
-        public
+        external
         view
         override
         returns (uint256)
@@ -161,63 +154,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
         // There's no overflow if there's no funding cycle.
-        if (_fundingCycle.id == 0) return 0;
+        if (_fundingCycle.number == 0) return 0;
 
-        // Get the amount of current overflow.
-        uint256 _currentOverflow = _overflowFrom(_fundingCycle);
-
-        // If there is no overflow, nothing is claimable.
-        if (_currentOverflow == 0) return 0;
-
-        // Get the total number of tickets in circulation.
-        uint256 _totalSupply = ticketBooth.totalSupplyOf(_projectId);
-
-        // Get the number of reserved tickets the project has.
-        // The reserved rate is in bits 8-15 of the metadata.
-        uint256 _reservedTicketAmount = _reservedTicketAmountFrom(
-            _processedTicketTrackerOf[_projectId],
-            uint256(uint8(_fundingCycle.metadata >> 8)),
-            _totalSupply
-        );
-
-        // If there are reserved tickets, add them to the total supply.
-        if (_reservedTicketAmount > 0)
-            _totalSupply = _totalSupply + _reservedTicketAmount;
-
-        // If the amount being redeemed is the the total supply, return the rest of the overflow.
-        if (_count == _totalSupply) return _currentOverflow;
-
-        // Get a reference to the linear proportion.
-        uint256 _base = PRBMath.mulDiv(_currentOverflow, _count, _totalSupply);
-
-        // Use the reconfiguration bonding curve if the queued cycle is pending approval according to the previous funding cycle's ballot.
-        uint256 _bondingCurveRate = fundingCycles.currentBallotStateOf(
-            _projectId
-        ) == BallotState.Active // The reconfiguration bonding curve rate is stored in bits 24-31 of the metadata property.
-            ? uint256(uint8(_fundingCycle.metadata >> 24)) // The bonding curve rate is stored in bits 16-23 of the data property after.
-            : uint256(uint8(_fundingCycle.metadata >> 16));
-
-        // The bonding curve formula.
-        // https://www.desmos.com/calculator/sp9ru6zbpk
-        // where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
-
-        // These conditions are all part of the same curve. Edge conditions are separated because fewer operation are necessary.
-        if (_bondingCurveRate == 200) return _base;
-        // TODO NEW: 0 bonding curve means not redeemable.
-        if (_bondingCurveRate == 0) return 0;
-        // return PRBMath.mulDiv(_base, _count, _totalSupply);
-        return
-            PRBMath.mulDiv(
-                _base,
-                _bondingCurveRate +
-                    PRBMath.mulDiv(
-                        _count,
-                        200 - _bondingCurveRate,
-                        _totalSupply
-                    ),
-                200
-            );
+        return _claimableOverflowOf(_fundingCycle, _count);
     }
+
+    // --- public views --- //
 
     /**
       @notice
@@ -263,7 +205,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         IModStore _modStore,
         IPrices _prices,
         ITerminalDirectory _terminalDirectory,
-        IFundingCycleExtrasStore1 _fundingCycleExtrasStore1,
         address _governance
     ) Operatable(_operatorStore) {
         require(
@@ -274,8 +215,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _modStore != IModStore(address(0)) &&
                 _prices != IPrices(address(0)) &&
                 _terminalDirectory != ITerminalDirectory(address(0)) &&
-                _fundingCycleExtrasStore1 !=
-                IFundingCycleExtrasStore1(address(0)) &&
                 _governance != address(address(0)),
             "TerminalV2: ZERO_ADDRESS"
         );
@@ -285,7 +224,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         modStore = _modStore;
         prices = _prices;
         terminalDirectory = _terminalDirectory;
-        fundingCycleExtrasStore1 = _fundingCycleExtrasStore1;
         governance = _governance;
     }
 
@@ -318,9 +256,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-      @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
-        @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
-        @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
       @param _payoutMods Any payout mods to set.
       @param _ticketMods Any ticket mods to set.
     */
@@ -329,8 +264,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         bytes32 _handle,
         string calldata _uri,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadata2 calldata _metadata,
-        FundingCycleExtras1 calldata _extras,
+        FundingCycleMetadataV2 calldata _metadata,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external override {
@@ -350,17 +284,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             fee,
             true
         );
-
-        // Set the extras for this configuration if values exist.
-        if (
-            _extras.payGate != IPayGate(address(0)) ||
-            _extras.overflowAllowance > 0
-        )
-            fundingCycleExtrasStore1.set(
-                _projectId,
-                _fundingCycle.configured,
-                _extras
-            );
 
         // Set payout mods if there are any.
         if (_payoutMods.length > 0)
@@ -405,9 +328,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
         @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-      @param _extras Extra properties to associate with this configuration. Each property added will make the transaction cost significantly more gas.
-        @param _extras.maxTicketSupply The maximum amount of tickets that can be in circulation during this configuration. Send 0 for no limit.
-        @param _extras.overflowAllowance The amount of overflow that the project can withdraw on demand.
       @param _payoutMods Any payout mods to set.
       @param _ticketMods Any ticket mods to set.
 
@@ -416,8 +336,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     function configure(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadata2 calldata _metadata,
-        FundingCycleExtras1 calldata _extras,
+        FundingCycleMetadataV2 calldata _metadata,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     )
@@ -453,17 +372,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             fee,
             _shouldConfigureActive
         );
-
-        // Set the extras for this configuration if values exist.
-        if (
-            _extras.payGate > IPayGate(address(0)) ||
-            _extras.overflowAllowance > 0
-        )
-            fundingCycleExtrasStore1.set(
-                _projectId,
-                _fundingCycle.configured,
-                _extras
-            );
 
         // Set payout mods for the new configuration if there are any.
         if (_payoutMods.length > 0)
@@ -505,6 +413,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
+        uint256 _weight,
         address _beneficiary,
         string memory _memo,
         bool _preferUnstakedTickets
@@ -525,7 +434,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         );
 
         // Get the current funding cycle to read the weight and currency from.
-        uint256 _weight = fundingCycles.BASE_WEIGHT();
+        _weight = _weight > 0 ? _weight : fundingCycles.BASE_WEIGHT();
 
         // Get the current funding cycle to read the weight and currency from.
         // Get the currency price of ETH.
@@ -566,6 +475,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _projectId,
             _beneficiary,
             _amount,
+            _weight,
+            _weightedAmount,
             _currency,
             _memo,
             msg.sender
@@ -594,7 +505,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         address _beneficiary,
         string calldata _memo,
         bool _preferUnstakedTickets
-    ) external payable override returns (uint256) {
+    ) external payable override nonReentrant returns (uint256) {
         return
             _pay(
                 _projectId,
@@ -630,7 +541,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _minReturnedTickets,
         string calldata _memo,
         bool _preferUnstakedTickets
-    ) external payable override returns (uint256) {
+    ) external payable override nonReentrant returns (uint256) {
         return
             _pay(
                 _projectId,
@@ -712,7 +623,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         // Take a fee from the _tappedWeiAmount, if needed.
         // The project's owner will be the beneficiary of the resulting printed tickets from the governance project.
-        uint256 _feeAmount = _fundingCycle.fee > 0
+        uint256 _feeAmount = _fundingCycle.fee > 0 && _projectId > 1
             ? _takeFee(
                 _tappedWeiAmount,
                 _fundingCycle.fee,
@@ -770,6 +681,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _count,
         uint256 _minReturnedWei,
         address payable _beneficiary,
+        string memory _memo,
         bool _preferUnstaked
     )
         external
@@ -782,11 +694,60 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         )
         returns (uint256 amount)
     {
-        // There must be an amount specified to redeem.
-        require(_count > 0, "TerminalV2::redeem: NO_OP");
+        // Get a reference to the current funding cycle for the project.
+        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
-        // Can't send claimed funds to the zero address.
-        require(_beneficiary != address(0), "TerminalV2::redeem: ZERO_ADDRESS");
+        // Save a reference to the type of access that is granted to this request by the delegate.
+        AccessType _accessType;
+
+        // Burn if the beneficiary address is that of this contract.
+        if (_beneficiary == address(this)) {
+            amount = 0;
+            _accessType = AccessType.Allow;
+        } else {
+            // The amount of ETH claimable by the message sender from the specified project by redeeming the specified number of tickets.
+            (amount, _memo, _accessType) = IFundingCycleDelegate(
+                address(uint160(_fundingCycle.metadata >> 34))
+            ) ==
+                IFundingCycleDelegate(address(0)) &&
+                ((_fundingCycle.metadata >> 33) & 1) == 1
+                ? (
+                    _claimableOverflowOf(_fundingCycle, _count),
+                    _memo,
+                    AccessType.Allow
+                )
+                : IFundingCycleDelegate(
+                    address(uint160(_fundingCycle.metadata >> 34))
+                ).redeemParams(
+                        _fundingCycle,
+                        _count,
+                        _beneficiary,
+                        _memo,
+                        msg.sender
+                    );
+
+            require(
+                _accessType != AccessType.Disallow,
+                "TerminalV2::redeem: DISALLOWED"
+            );
+
+            // The amount being claimed must be at least as much as was expected.
+            require(
+                amount >= _minReturnedWei,
+                "TerminalV2::redeem: INADEQUATE"
+            );
+
+            require(
+                amount <= balanceOf[_projectId],
+                "TerminalV2::redeem: INSUFFICIENT_FUNDS"
+            );
+
+            // Can't send claimed funds to the zero address.
+            require(
+                amount == 0 || _beneficiary != address(0),
+                "TerminalV2::redeem: ZERO_ADDRESS"
+            );
+        }
 
         // The holder must have the specified number of the project's tickets.
         require(
@@ -794,42 +755,44 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             "TerminalV2::redeem: INSUFFICIENT_TICKETS"
         );
 
-        // Burn if the beneficiary address is that of this contract.
-        if (_beneficiary == address(this)) {
-            amount = 0;
-        } else {
-            // The amount of ETH claimable by the message sender from the specified project by redeeming the specified number of tickets.
-            amount = claimableOverflowOf(_projectId, _count);
+        // Redeem the tickets, which burns them.
+        if (_count > 0) {
+            // Get a reference to the processed ticket tracker for the project.
+            int256 _processedTicketTracker = _processedTicketTrackerOf[
+                _projectId
+            ];
 
-            // Nothing to do if the amount is 0.
-            require(amount > 0, "TerminalV2::redeem: NO_OP");
+            // Subtract the count from the processed ticket tracker.
+            // Subtract from processed tickets so that the difference between whats been processed and the
+            // total supply remains the same.
+            // If there are at least as many processed tickets as there are tickets being redeemed,
+            // the processed ticket tracker of the project will be positive. Otherwise it will be negative.
+            _processedTicketTrackerOf[_projectId] = _processedTicketTracker < 0 // If the tracker is negative, add the count and reverse it.
+                ? -int256(uint256(-_processedTicketTracker) + _count) // the tracker is less than the count, subtract it from the count and reverse it.
+                : _processedTicketTracker < int256(_count)
+                ? -(int256(_count) - _processedTicketTracker) // simply subtract otherwise.
+                : _processedTicketTracker - int256(_count);
+
+            ticketBooth.redeem(_account, _projectId, _count, _preferUnstaked);
         }
 
-        // The amount being claimed must be at least as much as was expected.
-        require(amount >= _minReturnedWei, "TerminalV2::redeem: INADEQUATE");
-
         // Remove the redeemed funds from the project's balance.
-        balanceOf[_projectId] = balanceOf[_projectId] - amount;
+        if (amount > 0) {
+            balanceOf[_projectId] = balanceOf[_projectId] - amount;
+            // Transfer funds to the specified address.
+            Address.sendValue(_beneficiary, amount);
+        }
 
-        // Get a reference to the processed ticket tracker for the project.
-        int256 _processedTicketTracker = _processedTicketTrackerOf[_projectId];
-
-        // Subtract the count from the processed ticket tracker.
-        // Subtract from processed tickets so that the difference between whats been processed and the
-        // total supply remains the same.
-        // If there are at least as many processed tickets as there are tickets being redeemed,
-        // the processed ticket tracker of the project will be positive. Otherwise it will be negative.
-        _processedTicketTrackerOf[_projectId] = _processedTicketTracker < 0 // If the tracker is negative, add the count and reverse it.
-            ? -int256(uint256(-_processedTicketTracker) + _count) // the tracker is less than the count, subtract it from the count and reverse it.
-            : _processedTicketTracker < int256(_count)
-            ? -(int256(_count) - _processedTicketTracker) // simply subtract otherwise.
-            : _processedTicketTracker - int256(_count);
-
-        // Redeem the tickets, which burns them.
-        ticketBooth.redeem(_account, _projectId, _count, _preferUnstaked);
-
-        // Transfer funds to the specified address.
-        if (amount > 0) Address.sendValue(_beneficiary, amount);
+        if (_accessType == AccessType.AllowWithCallback)
+            IFundingCycleDelegate(
+                address(uint160(_fundingCycle.metadata >> 34))
+            ).redeemCallback(
+                    _fundingCycle,
+                    _count,
+                    amount,
+                    _beneficiary,
+                    msg.sender
+                );
 
         emit Redeem(
             _account,
@@ -837,6 +800,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _projectId,
             _count,
             amount,
+            _memo,
             msg.sender
         );
     }
@@ -932,63 +896,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         migrationIsAllowed[_contract] = !migrationIsAllowed[_contract];
 
         emit AllowMigration(_contract);
-    }
-
-    /** 
-      @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
-
-      @param _projectId The ID of the project to use the allowance of.
-      @param _amount The amount of the allowance to use.
-      @param _beneficiary The address to send the funds.
-      @param _memo A memo to associate with the event.
-    */
-    function useAllowance(
-        uint256 _projectId,
-        uint256 _amount,
-        address payable _beneficiary,
-        string calldata _memo
-    )
-        external
-        nonReentrant
-        requirePermission(
-            projects.ownerOf(_projectId),
-            _projectId,
-            Operations2.UseAllowance
-        )
-    {
-        // Amount must be positive.
-        require(_amount > 0, "TerminalV2::useAllowance: NO_OP");
-
-        // The balance must contain the specified amount.
-        require(
-            _amount <= balanceOf[_projectId],
-            "TerminalV2::useAllowance: INSUFFICIENT_FUNDS"
-        );
-
-        // Get a reference to the project's current funding cycle.
-        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
-
-        // Decrement the amount from the allowance so that it can't be used again.
-        fundingCycleExtrasStore1.decrementAllowance(
-            _projectId,
-            _fundingCycle.configured,
-            _amount
-        );
-
-        // Decrement the project's balance.
-        balanceOf[_projectId] = balanceOf[_projectId] - _amount;
-
-        // Send the funds to the beneficiary.
-        Address.sendValue(_beneficiary, _amount);
-
-        emit UseAllowance(
-            _projectId,
-            _fundingCycle.configured,
-            _amount,
-            _beneficiary,
-            _memo,
-            msg.sender
-        );
     }
 
     /** 
@@ -1147,8 +1054,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         FundingCycle memory _fundingCycle,
         uint256 _amount
     ) private returns (uint256 leftoverAmount) {
-        if (_amount == 0) return 0;
-
         // Set the leftover amount to the initial amount.
         leftoverAmount = _amount;
 
@@ -1209,61 +1114,51 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Get a reference to the current funding cycle for the project.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
-        // Get a reference to the current pay gate.
-        IPayGate _payGate = fundingCycleExtrasStore1.payGateOf(
-            _projectId,
-            _fundingCycle.configured
-        );
+        require(_fundingCycle.number > 0, "TerminalV2::_pay: NO_FUNDING_CYCLE");
 
-        // Use the funding cycle's reserved rate if it exists. Otherwise don't set a reserved rate.
-        // The reserved rate is stored in bits 8-15 of the metadata property.
-        uint256 _reservedRate;
-        // Determine which weight to use for calculating the number of tickets to print.
         uint256 _weight;
+        AccessType _accessType;
 
-        // If a funding cycle doesn't yet exist, use the base weight.
-        if (_fundingCycle.number == 0) {
-            _weight = fundingCycles.BASE_WEIGHT();
-            _reservedRate = 0;
-        } else {
-            // Get weight
-            (
-                uint256 _payWeight,
-                uint256 _payReservedRate,
-                bool _disallow
-            ) = _payGate == IPayGate(address(0))
-                    ? (
-                        _fundingCycle.weight,
-                        uint256(uint8(_fundingCycle.metadata >> 8)),
-                        false
-                    )
-                    : _payGate.check(
-                        _projectId,
-                        _amount,
-                        _beneficiary,
-                        _fundingCycle
-                    );
+        // Get weight
+        (_weight, _memo, _accessType) = IFundingCycleDelegate(
+            address(uint160(_fundingCycle.metadata >> 34))
+        ) ==
+            IFundingCycleDelegate(address(0)) &&
+            ((_fundingCycle.metadata >> 32) & 1) == 1
+            ? (
+                _fundingCycle.weight,
+                _memo,
+                AccessType(uint8(_fundingCycle.metadata >> 32))
+            )
+            : IFundingCycleDelegate(
+                address(uint160(_fundingCycle.metadata >> 34))
+            ).payParams(
+                    _fundingCycle,
+                    _amount,
+                    _beneficiary,
+                    _memo,
+                    msg.sender
+                );
 
-            require(!_disallow, "TerminalV2::_pay: DISALLOWED");
-
-            // Use the weight override if it exists.
-            _weight = _payWeight;
-            _reservedRate = _payReservedRate;
-        }
+        require(
+            _accessType != AccessType.Disallow,
+            "TerminalV2::_pay: DISALLOWED"
+        );
 
         // Multiply the amount by the funding cycle's weight to determine the amount of tickets to print.
         uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, _weight);
 
         // Only print the tickets that are unreserved.
-        uint256 _unreservedWeightedAmount = PRBMath.mulDiv(
+        uint256 _ticketCountToPrint = PRBMath.mulDiv(
             _weightedAmount,
-            200 - _reservedRate,
+            // The reserved rate is stored in bits 8-15 of the metadata property.
+            200 - uint256(uint8(_fundingCycle.metadata >> 8)),
             200
         );
 
         // The minimum amount of unreserved tickets must be printed.
         require(
-            _unreservedWeightedAmount >= _minReturnedTickets,
+            _ticketCountToPrint >= _minReturnedTickets,
             "TerminalV2::_pay: INADEQUATE"
         );
 
@@ -1271,30 +1166,26 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         balanceOf[_projectId] = balanceOf[_projectId] + _amount;
 
         // If theres an unreserved weighted amount, print tickets representing this amount for the beneficiary.
-        if (_unreservedWeightedAmount > 0) {
-            // If there's no funding cycle, track this payment as having been made before a configuration.
-            if (_fundingCycle.number == 0) {
-                // Mark the premined tickets as processed so that reserved tickets can't later be printed against them.
-                _processedTicketTrackerOf[_projectId] =
-                    _processedTicketTrackerOf[_projectId] +
-                    int256(_unreservedWeightedAmount);
-
-                // If theres no funding cycle, add these tickets to the amount that were printed before a funding cycle was configured.
-                _preconfigureTicketCountOf[_projectId] =
-                    _preconfigureTicketCountOf[_projectId] +
-                    _unreservedWeightedAmount;
-            }
-
+        if (_ticketCountToPrint > 0) {
             // Print the project's tickets for the beneficiary.
             ticketBooth.print(
                 _beneficiary,
                 _projectId,
-                _unreservedWeightedAmount,
+                _ticketCountToPrint,
                 _preferUnstakedTickets
             );
         } else if (_weightedAmount > 0) {
             // If there is no unreserved weight amount but there is a weighted amount,
             // the full weighted amount should be explicitly tracked as reserved since no unreserved tickets were printed.
+            // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
+            // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
+            require(
+                _processedTicketTrackerOf[_projectId] > 0 ||
+                    uint256(-_processedTicketTrackerOf[_projectId]) +
+                        uint256(_weightedAmount) <=
+                    uint256(type(int256).max),
+                "TerminalV2::_pay: INT_LIMIT_REACHED"
+            );
 
             // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
             _processedTicketTrackerOf[_projectId] =
@@ -1302,8 +1193,20 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 int256(_weightedAmount);
         }
 
+        if (_accessType == AccessType.AllowWithCallback)
+            IFundingCycleDelegate(
+                address(uint160(_fundingCycle.metadata >> 34))
+            ).payCallback(
+                    _fundingCycle,
+                    _amount,
+                    _weight,
+                    _ticketCountToPrint,
+                    _beneficiary,
+                    msg.sender
+                );
+
         emit Pay(
-            _fundingCycle.id,
+            _fundingCycle.number,
             _projectId,
             _beneficiary,
             _amount,
@@ -1311,7 +1214,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             msg.sender
         );
 
-        return _fundingCycle.id;
+        return _fundingCycle.number;
     }
 
     /** 
@@ -1394,7 +1297,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
       @return packed The packed uint256 of all metadata params. The first 8 bytes specify the version.
      */
     function _validateAndPackFundingCycleMetadata(
-        FundingCycleMetadata2 memory _metadata
+        FundingCycleMetadataV2 memory _metadata
     ) private pure returns (uint256 packed) {
         // The reserved project ticket rate must be less than or equal to 200.
         require(
@@ -1422,6 +1325,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         packed |= _metadata.bondingCurveRate << 16;
         // reconfiguration bonding curve rate in bits 24-31.
         packed |= _metadata.reconfigurationBondingCurveRate << 24;
+        // use pay delegate in bit 32.
+        packed |= (_metadata.usePayDelegate ? 1 : 0) << 32;
+        // use redeem delegate in bit 33.
+        packed |= (_metadata.useRedeemDelegate ? 1 : 0) << 33;
+        // delegate address in bits 34-193.
+        packed |= uint160(address(_metadata.delegate)) << 34;
     }
 
     /** 
@@ -1467,7 +1376,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
         // If there's no funding cycle, there's no reserved tickets to print.
-        if (_fundingCycle.id == 0) return 0;
+        if (_fundingCycle.number == 0) return 0;
 
         // Get a reference to new total supply of tickets before printing reserved tickets.
         uint256 _totalTickets = ticketBooth.totalSupplyOf(_projectId);
@@ -1488,10 +1397,9 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         address _owner = projects.ownerOf(_projectId);
 
         // Distribute tickets to mods and get a reference to the leftover amount to print after all mods have had their share printed.
-        uint256 _leftoverTicketAmount = _distributeToTicketMods(
-            _fundingCycle,
-            amount
-        );
+        uint256 _leftoverTicketAmount = amount == 0
+            ? 0
+            : _distributeToTicketMods(_fundingCycle, amount);
 
         // If there's nothing to print, return.
         // TODO new: moved down to allow setting tracker when amount is 0.
@@ -1500,12 +1408,74 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             ticketBooth.print(_owner, _projectId, _leftoverTicketAmount, false);
 
         emit PrintReserveTickets(
-            _fundingCycle.id,
+            _fundingCycle.number,
             _projectId,
             _owner,
             amount,
             _leftoverTicketAmount,
             msg.sender
         );
+    }
+
+    function _claimableOverflowOf(
+        FundingCycle memory _fundingCycle,
+        uint256 _count
+    ) private view returns (uint256) {
+        // Get the amount of current overflow.
+        uint256 _currentOverflow = _overflowFrom(_fundingCycle);
+
+        // If there is no overflow, nothing is claimable.
+        if (_currentOverflow == 0) return 0;
+
+        // Get the total number of tickets in circulation.
+        uint256 _totalSupply = ticketBooth.totalSupplyOf(
+            _fundingCycle.projectId
+        );
+
+        // Get the number of reserved tickets the project has.
+        // The reserved rate is in bits 8-15 of the metadata.
+        uint256 _reservedTicketAmount = _reservedTicketAmountFrom(
+            _processedTicketTrackerOf[_fundingCycle.projectId],
+            uint256(uint8(_fundingCycle.metadata >> 8)),
+            _totalSupply
+        );
+
+        // If there are reserved tickets, add them to the total supply.
+        if (_reservedTicketAmount > 0)
+            _totalSupply = _totalSupply + _reservedTicketAmount;
+
+        // If the amount being redeemed is the the total supply, return the rest of the overflow.
+        if (_count == _totalSupply) return _currentOverflow;
+
+        // Get a reference to the linear proportion.
+        uint256 _base = PRBMath.mulDiv(_currentOverflow, _count, _totalSupply);
+
+        // Use the reconfiguration bonding curve if the queued cycle is pending approval according to the previous funding cycle's ballot.
+        uint256 _bondingCurveRate = fundingCycles.currentBallotStateOf(
+            _fundingCycle.projectId
+        ) == BallotState.Active // The reconfiguration bonding curve rate is stored in bits 24-31 of the metadata property.
+            ? uint256(uint8(_fundingCycle.metadata >> 24)) // The bonding curve rate is stored in bits 16-23 of the data property after.
+            : uint256(uint8(_fundingCycle.metadata >> 16));
+
+        // The bonding curve formula.
+        // https://www.desmos.com/calculator/sp9ru6zbpk
+        // where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
+
+        // These conditions are all part of the same curve. Edge conditions are separated because fewer operation are necessary.
+        if (_bondingCurveRate == 200) return _base;
+        // TODO NEW: 0 bonding curve means not redeemable.
+        if (_bondingCurveRate == 0) return 0;
+        // return PRBMath.mulDiv(_base, _count, _totalSupply);
+        return
+            PRBMath.mulDiv(
+                _base,
+                _bondingCurveRate +
+                    PRBMath.mulDiv(
+                        _count,
+                        200 - _bondingCurveRate,
+                        _totalSupply
+                    ),
+                200
+            );
     }
 }

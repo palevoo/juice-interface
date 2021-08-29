@@ -88,7 +88,7 @@ module.exports = function() {
       contract: terminalV2,
       fn: "deploy",
       args: [
-        this.deployer.address,
+        governance.address,
         utils.formatBytes32String("juicebox"),
         "",
         {
@@ -141,7 +141,8 @@ module.exports = function() {
     this.constants.MaxCycleLimit = await fundingCycles.MAX_CYCLE_LIMIT();
 
     this.constants.GovernanceProjectId = projectId;
-    this.constants.GovenanceOwner = this.deployer.address;
+    this.constants.GovernanceOwner = this.deployer;
+    this.constants.ProjectOwner = governance;
 
     // All perecents are out of 200, except for mods.
     this.constants.MaxPercent = BigNumber.from(200);

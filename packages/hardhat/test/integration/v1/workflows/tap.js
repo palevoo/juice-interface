@@ -37,7 +37,9 @@ module.exports = [
 
       // The owner of the project with mods.
       // Exclude the governance project's owner to make the test calculations cleaner.
-      const owner = randomSignerFn({ exclude: [constants.GovenanceOwner] });
+      const owner = randomSignerFn({
+        exclude: [constants.GovernanceOwner.address]
+      });
 
       // An account that will be used to make a payment.
       const payer = randomSignerFn();
@@ -221,7 +223,7 @@ module.exports = [
       // The owner of the mod project.
       // exlcude the owner address and the governance owner to make the test calculations cleaner.
       const modProjectOwner = randomSignerFn({
-        exclude: [owner.address, constants.GovenanceOwner]
+        exclude: [owner.address, constants.GovernanceOwner.address]
       });
 
       // If this funding cycle duration is too much smaller than

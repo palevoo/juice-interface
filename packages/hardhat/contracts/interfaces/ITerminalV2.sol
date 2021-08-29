@@ -5,18 +5,20 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./ITicketBooth.sol";
 import "./IFundingCycles.sol";
-import "./IFundingCycleExtrasStore1.sol";
+import "./IFundingCycleDelegate.sol";
 import "./IYielder.sol";
 import "./IProjects.sol";
 import "./IModStore.sol";
 import "./ITerminal.sol";
 import "./IOperatorStore.sol";
 
-struct FundingCycleMetadata2 {
+struct FundingCycleMetadataV2 {
     uint256 reservedRate;
     uint256 bondingCurveRate;
     uint256 reconfigurationBondingCurveRate;
-    uint256 weightMultiplier;
+    bool usePayDelegate;
+    bool useRedeemDelegate;
+    IFundingCycleDelegate delegate;
 }
 
 interface ITerminalV2 {
@@ -37,11 +39,12 @@ interface ITerminalV2 {
         uint256 indexed _projectId,
         uint256 amount,
         uint256 returnAmount,
+        string memo,
         address caller
     );
 
     event PrintReserveTickets(
-        uint256 indexed fundingCycleId,
+        uint256 indexed fundingCycleNumber,
         uint256 indexed projectId,
         address indexed beneficiary,
         uint256 count,
@@ -71,21 +74,14 @@ interface ITerminalV2 {
         uint256 indexed projectId,
         address indexed beneficiary,
         uint256 amount,
+        uint256 weight,
+        uint256 weightedAmount,
         uint256 currency,
         string memo,
         address caller
     );
 
     event Deposit(uint256 amount);
-
-    event UseAllowance(
-        uint256 indexed projectId,
-        uint256 indexed configuration,
-        uint256 amount,
-        address beneficiary,
-        string memo,
-        address caller
-    );
 
     event TransferGovernance(address governance);
 
@@ -100,11 +96,6 @@ interface ITerminalV2 {
     function prices() external view returns (IPrices);
 
     function modStore() external view returns (IModStore);
-
-    function fundingCycleExtrasStore1()
-        external
-        view
-        returns (IFundingCycleExtrasStore1);
 
     function reservedTicketBalanceOf(uint256 _projectId, uint256 _reservedRate)
         external
@@ -135,8 +126,7 @@ interface ITerminalV2 {
         bytes32 _handle,
         string calldata _uri,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadata2 calldata _metadata,
-        FundingCycleExtras1 calldata _extras,
+        FundingCycleMetadataV2 calldata _metadata,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external;
@@ -144,8 +134,7 @@ interface ITerminalV2 {
     function configure(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadata2 calldata _metadata,
-        FundingCycleExtras1 calldata _extras,
+        FundingCycleMetadataV2 calldata _metadata,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external returns (uint256);
@@ -154,6 +143,7 @@ interface ITerminalV2 {
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
+        uint256 _weight,
         address _beneficiary,
         string memory _memo,
         bool _preferUnstakedTickets
@@ -172,6 +162,7 @@ interface ITerminalV2 {
         uint256 _amount,
         uint256 _minReturnedWei,
         address payable _beneficiary,
+        string memory _memo,
         bool _preferUnstaked
     ) external returns (uint256 returnAmount);
 

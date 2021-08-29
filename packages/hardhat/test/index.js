@@ -382,7 +382,7 @@ describe("Juicebox", async function() {
   });
 
   // Run the tests.
-  // describe("Unit", unit);
+  describe("Unit", unit);
   // describe("Integration V1", integration.v1);
-  describe("Integration V2", integration.v2);
+  // describe("Integration V2", integration.v2);
 });

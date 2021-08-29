@@ -155,6 +155,86 @@ module.exports = [
       })
   },
   {
+    description: "The owner should be the original project deployer",
+    fn: ({ contracts, checkFn, randomSignerFn, constants }) => {
+      checkFn({
+        caller: randomSignerFn(),
+        contract: contracts.projects,
+        fn: "ownerOf",
+        args: [constants.GovernanceProjectId],
+        expect: constants.ProjectOwner.address
+      });
+    }
+  },
+  {
+    description: "Transfer the project to another address",
+    fn: async ({
+      executeFn,
+      contracts,
+      constants,
+      randomSignerFn,
+      randomBytesFn
+    }) => {
+      const temporaryOwner = randomSignerFn({
+        exclude: [constants.GovernanceOwner.address]
+      });
+      await executeFn({
+        caller: constants.GovernanceOwner,
+        contract: contracts.governance,
+        fn: "transferProjectOwnership",
+        args: [
+          contracts.projects.address,
+          temporaryOwner.address,
+          constants.GovernanceProjectId,
+          randomBytesFn()
+        ]
+      });
+      return { temporaryOwner };
+    }
+  },
+  {
+    description: "The owner should have changed",
+    fn: ({
+      contracts,
+      checkFn,
+      randomSignerFn,
+      constants,
+      local: { temporaryOwner }
+    }) =>
+      checkFn({
+        caller: randomSignerFn(),
+        contract: contracts.projects,
+        fn: "ownerOf",
+        args: [constants.GovernanceProjectId],
+        expect: temporaryOwner.address
+      })
+  },
+  {
+    description: "Transfer the project back",
+    fn: ({ executeFn, contracts, constants, local: { temporaryOwner } }) =>
+      executeFn({
+        caller: temporaryOwner,
+        contract: contracts.projects,
+        fn: "transferFrom",
+        args: [
+          temporaryOwner.address,
+          constants.ProjectOwner.address,
+          constants.GovernanceProjectId
+        ]
+      })
+  },
+  {
+    description: "The owner should be the original owner",
+    fn: ({ contracts, checkFn, randomSignerFn, constants }) =>
+      checkFn({
+        caller: randomSignerFn(),
+        contract: contracts.projects,
+        fn: "ownerOf",
+        args: [constants.GovernanceProjectId],
+        expect: constants.ProjectOwner.address
+      })
+  },
+  {
     description: "Set the old governance back",
     fn: ({ executeFn, contracts, deployer }) => {
       executeFn({

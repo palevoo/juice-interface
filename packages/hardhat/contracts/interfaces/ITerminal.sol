@@ -5,11 +5,11 @@ import "./ITerminalDirectory.sol";
 
 interface ITerminal {
     event Pay(
-        uint256 indexed fundingCycleId,
+        uint256 indexed fundingCycleNumber,
         uint256 indexed projectId,
         address indexed beneficiary,
         uint256 amount,
-        string note,
+        string memo,
         address caller
     );
 
