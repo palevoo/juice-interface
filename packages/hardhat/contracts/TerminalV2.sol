@@ -359,7 +359,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         if (
             uint256(_processedTicketTrackerOf[_projectId]) !=
             ticketBooth.totalSupplyOf(_projectId)
-        ) _printReservedTickets(_projectId);
+        ) _printReservedTickets(_projectId, "");
 
         // If the project can still print premined tickets configure the active funding cycle instead of creating a standby one.
         bool _shouldConfigureActive = canPrintPreminedTickets(_projectId);
@@ -571,7 +571,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
-        uint256 _minReturnedWei
+        uint256 _minReturnedWei,
+        string memory _memo
     ) external override nonReentrant returns (uint256) {
         // Register the funds as tapped. Get the ID of the funding cycle that was tapped.
         FundingCycle memory _fundingCycle = fundingCycles.tap(
@@ -588,11 +589,11 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             "TerminalV2::tap: UNEXPECTED_CURRENCY"
         );
 
-        // Get the currency price of ETH.
-        uint256 _ethPrice = prices.getETHPriceFor(_fundingCycle.currency);
-
         // The amount of ETH that is being tapped.
-        uint256 _tappedWeiAmount = PRBMathUD60x18.div(_amount, _ethPrice);
+        uint256 _tappedWeiAmount = PRBMathUD60x18.div(
+            _amount,
+            prices.getETHPriceFor(_fundingCycle.currency)
+        );
 
         // The amount being tapped must be at least as much as was expected.
         require(
@@ -600,23 +601,18 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             "TerminalV2::tap: INADEQUATE"
         );
 
-        // Get a reference to this project's current balance, including any earned yield.
-        uint256 _balance = balanceOf[_fundingCycle.projectId];
-
         // The amount being tapped must be available.
         require(
-            _tappedWeiAmount <= _balance,
+            _tappedWeiAmount <= balanceOf[_projectId],
             "TerminalV2::tap: INSUFFICIENT_FUNDS"
         );
 
         // Removed the tapped funds from the project's balance.
-        balanceOf[_projectId] = _balance - _tappedWeiAmount;
+        balanceOf[_projectId] = balanceOf[_projectId] - _tappedWeiAmount;
 
         // Get a reference to the project owner, which will receive the admin's tickets from paying the fee,
         // and receive any extra tapped funds not allocated to mods.
-        address payable _projectOwner = payable(
-            projects.ownerOf(_fundingCycle.projectId)
-        );
+        address payable _projectOwner = payable(projects.ownerOf(_projectId));
 
         // Get a reference to the handle of the project paying the fee and sending payouts.
         bytes32 _handle = projects.handleOf(_projectId);
@@ -646,13 +642,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         emit Tap(
             _fundingCycle.id,
-            _fundingCycle.projectId,
+            _projectId,
             _projectOwner,
             _amount,
-            _fundingCycle.currency,
             _tappedWeiAmount - _feeAmount,
             _leftoverTransferAmount,
             _feeAmount,
+            _memo,
             msg.sender
         );
 
@@ -838,7 +834,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         if (
             uint256(_processedTicketTrackerOf[_projectId]) !=
             ticketBooth.totalSupplyOf(_projectId)
-        ) _printReservedTickets(_projectId);
+        ) _printReservedTickets(_projectId, "");
 
         // Get a reference to this project's current balance, included any earned yield.
         uint256 _balanceOf = balanceOf[_projectId];
@@ -934,13 +930,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
       @return amount The amount of tickets that are being printed.
     */
-    function printReservedTickets(uint256 _projectId)
+    function printReservedTickets(uint256 _projectId, string memory _memo)
         external
         override
         nonReentrant
         returns (uint256 amount)
     {
-        return _printReservedTickets(_projectId);
+        return _printReservedTickets(_projectId, _memo);
     }
 
     // --- private helper functions --- //
@@ -1368,7 +1364,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
     /** 
       @notice See docs for `printReservedTickets`
     */
-    function _printReservedTickets(uint256 _projectId)
+    function _printReservedTickets(uint256 _projectId, string memory _memo)
         private
         returns (uint256 amount)
     {
@@ -1413,6 +1409,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _owner,
             amount,
             _leftoverTicketAmount,
+            _memo,
             msg.sender
         );
     }

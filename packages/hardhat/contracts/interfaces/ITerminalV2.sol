@@ -27,10 +27,10 @@ interface ITerminalV2 {
         uint256 indexed projectId,
         address indexed beneficiary,
         uint256 amount,
-        uint256 currency,
         uint256 netTransferAmount,
         uint256 beneficiaryTransferAmount,
         uint256 govFeeAmount,
+        string memo,
         address caller
     );
     event Redeem(
@@ -49,6 +49,7 @@ interface ITerminalV2 {
         address indexed beneficiary,
         uint256 count,
         uint256 beneficiaryTicketAmount,
+        string memo,
         address caller
     );
 
@@ -153,7 +154,8 @@ interface ITerminalV2 {
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
-        uint256 _minReturnedWei
+        uint256 _minReturnedWei,
+        string memory _memo
     ) external returns (uint256);
 
     function redeem(
@@ -166,7 +168,7 @@ interface ITerminalV2 {
         bool _preferUnstaked
     ) external returns (uint256 returnAmount);
 
-    function printReservedTickets(uint256 _projectId)
+    function printReservedTickets(uint256 _projectId, string memory _memo)
         external
         returns (uint256 reservedTicketsToPrint);
 
