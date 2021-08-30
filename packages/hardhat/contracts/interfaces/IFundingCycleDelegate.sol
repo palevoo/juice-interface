@@ -44,6 +44,7 @@ interface IFundingCycleDelegate {
         uint256 _weight,
         uint256 _count,
         address _beneficiary,
+        string memory memo,
         address _caller
     ) external;
 
@@ -52,6 +53,7 @@ interface IFundingCycleDelegate {
         uint256 _count,
         uint256 _amount,
         address _beneficiary,
+        string memory memo,
         address _caller
     ) external;
 }

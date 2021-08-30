@@ -16,12 +16,40 @@ struct FundingCycleMetadataV2 {
     uint256 reservedRate;
     uint256 bondingCurveRate;
     uint256 reconfigurationBondingCurveRate;
+    bool pausePay;
+    bool pauseTap;
+    bool pauseRedeem;
+    bool pausePrintReserves;
     bool usePayDelegate;
     bool useRedeemDelegate;
     IFundingCycleDelegate delegate;
 }
 
 interface ITerminalV2 {
+    event Pay(
+        uint256 indexed fundingCycleNumber,
+        uint256 indexed projectId,
+        address indexed beneficiary,
+        uint256 amount,
+        string memo,
+        address caller
+    );
+
+    event AddToBalance(
+        uint256 indexed projectId,
+        uint256 value,
+        address caller
+    );
+
+    event AllowMigration(ITerminal allowed);
+
+    event Migrate(
+        uint256 indexed projectId,
+        ITerminal indexed to,
+        uint256 _amount,
+        address caller
+    );
+
     event Tap(
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
@@ -33,10 +61,11 @@ interface ITerminalV2 {
         string memo,
         address caller
     );
+
     event Redeem(
         address indexed holder,
         address indexed beneficiary,
-        uint256 indexed _projectId,
+        uint256 indexed projectId,
         uint256 amount,
         uint256 returnAmount,
         string memo,
@@ -60,6 +89,7 @@ interface ITerminalV2 {
         uint256 modCut,
         address caller
     );
+
     event DistributeToTicketMod(
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
@@ -67,9 +97,6 @@ interface ITerminalV2 {
         uint256 modCut,
         address caller
     );
-    event AppointGovernance(address governance);
-
-    event AcceptGovernance(address governance);
 
     event PrintPreminedTickets(
         uint256 indexed projectId,
@@ -83,10 +110,6 @@ interface ITerminalV2 {
     );
 
     event Deposit(uint256 amount);
-
-    event TransferGovernance(address governance);
-
-    function governance() external view returns (address);
 
     function projects() external view returns (IProjects);
 
@@ -171,8 +194,6 @@ interface ITerminalV2 {
     function printReservedTickets(uint256 _projectId, string memory _memo)
         external
         returns (uint256 reservedTicketsToPrint);
-
-    function transferGovernance(address _newGovernance) external;
 
     function pay(
         uint256 _projectId,

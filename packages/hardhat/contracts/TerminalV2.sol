@@ -8,8 +8,11 @@ import "@paulrberg/contracts/math/PRBMath.sol";
 import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 
 import "./interfaces/ITerminalV2.sol";
+import "./interfaces/IGovernable.sol";
+
 import "./abstract/JuiceboxProject.sol";
 import "./abstract/Operatable.sol";
+import "./abstract/Governable.sol";
 
 import "./libraries/Operations.sol";
 import "./libraries/Operations2.sol";
@@ -35,13 +38,13 @@ import "./libraries/Operations2.sol";
   @dev 
   A project can transfer its funds, along with the power to reconfigure and mint/burn their Tickets, from this contract to another allowed terminal contract at any time.
 */
-contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
-    // Modifier to only allow governance to call the function.
-    modifier onlyGov() {
-        require(msg.sender == governance, "TerminalV2: UNAUTHORIZED");
-        _;
-    }
-
+contract TerminalV2 is
+    ITerminalV2,
+    ITerminal,
+    Governable,
+    Operatable,
+    ReentrancyGuard
+{
     // --- private stored properties --- //
 
     // The difference between the processed ticket tracker of a project and the project's ticket's total supply is the amount of tickets that
@@ -78,9 +81,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
     /// @notice The percent fee the Juicebox project takes from tapped amounts. Out of 200.
     uint256 public override fee = 10;
-
-    /// @notice The governance of the contract who makes fees and can allow new terminal contracts to be migrated to by project owners.
-    address public override governance;
 
     // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
     mapping(ITerminal => bool) public override migrationIsAllowed;
@@ -150,13 +150,8 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         override
         returns (uint256)
     {
-        // Get a reference to the current funding cycle for the project.
-        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
-
-        // There's no overflow if there's no funding cycle.
-        if (_fundingCycle.number == 0) return 0;
-
-        return _claimableOverflowOf(_fundingCycle, _count);
+        return
+            _claimableOverflowOf(fundingCycles.currentOf(_projectId), _count);
     }
 
     // --- public views --- //
@@ -206,7 +201,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         IPrices _prices,
         ITerminalDirectory _terminalDirectory,
         address _governance
-    ) Operatable(_operatorStore) {
+    ) Operatable(_operatorStore) Governable(_governance) {
         require(
             _projects != IProjects(address(0)) &&
                 _fundingCycles != IFundingCycles(address(0)) &&
@@ -214,8 +209,7 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                 _operatorStore != IOperatorStore(address(0)) &&
                 _modStore != IModStore(address(0)) &&
                 _prices != IPrices(address(0)) &&
-                _terminalDirectory != ITerminalDirectory(address(0)) &&
-                _governance != address(address(0)),
+                _terminalDirectory != ITerminalDirectory(address(0)),
             "TerminalV2: ZERO_ADDRESS"
         );
         projects = _projects;
@@ -430,19 +424,16 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Can't send to the zero address.
         require(
             _beneficiary != address(0),
-            "TerminalV2::printTickets: ZERO_ADDRESS"
+            "TerminalV2::printPreminedTickets: ZERO_ADDRESS"
         );
 
         // Get the current funding cycle to read the weight and currency from.
         _weight = _weight > 0 ? _weight : fundingCycles.BASE_WEIGHT();
 
         // Get the current funding cycle to read the weight and currency from.
-        // Get the currency price of ETH.
-        uint256 _ethPrice = prices.getETHPriceFor(_currency);
-
         // Multiply the amount by the funding cycle's weight to determine the amount of tickets to print.
         uint256 _weightedAmount = PRBMathUD60x18.mul(
-            PRBMathUD60x18.div(_amount, _ethPrice),
+            PRBMathUD60x18.div(_amount, prices.getETHPriceFor(_currency)),
             _weight
         );
 
@@ -450,7 +441,17 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Do this check after the external calls above.
         require(
             canPrintPreminedTickets(_projectId),
-            "TerminalV2::printTickets: ALREADY_ACTIVE"
+            "TerminalV2::printPreminedTickets: ALREADY_ACTIVE"
+        );
+
+        // Set the preconfigure tickets as processed so that reserved tickets cant be minted against them.
+        // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
+        require(
+            _processedTicketTrackerOf[_projectId] < 0 ||
+                uint256(_processedTicketTrackerOf[_projectId]) +
+                    uint256(_weightedAmount) <=
+                uint256(type(int256).max),
+            "TerminalV1::printPreminedTickets: INT_LIMIT_REACHED"
         );
 
         // Set the preconfigure tickets as processed so that reserved tickets cant be minted against them.
@@ -583,6 +584,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // If there's no funding cycle, there are no funds to tap.
         if (_fundingCycle.id == 0) return 0;
 
+        // Must not be paused.
+        require(
+            ((_fundingCycle.metadata >> 33) & 1) == 1,
+            "TerminalV2:tap: PAUSED"
+        );
+
         // Make sure the currency's match.
         require(
             _currency == _fundingCycle.currency,
@@ -693,6 +700,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Get a reference to the current funding cycle for the project.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
+        // Must not be paused.
+        require(
+            ((_fundingCycle.metadata >> 34) & 1) == 1,
+            "TerminalV2:redeem: PAUSED"
+        );
+
         // Save a reference to the type of access that is granted to this request by the delegate.
         AccessType _accessType;
 
@@ -703,17 +716,17 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         } else {
             // The amount of ETH claimable by the message sender from the specified project by redeeming the specified number of tickets.
             (amount, _memo, _accessType) = IFundingCycleDelegate(
-                address(uint160(_fundingCycle.metadata >> 34))
+                address(uint160(_fundingCycle.metadata >> 37))
             ) ==
                 IFundingCycleDelegate(address(0)) &&
-                ((_fundingCycle.metadata >> 33) & 1) == 1
+                ((_fundingCycle.metadata >> 36) & 1) == 1
                 ? (
                     _claimableOverflowOf(_fundingCycle, _count),
                     _memo,
                     AccessType.Allow
                 )
                 : IFundingCycleDelegate(
-                    address(uint160(_fundingCycle.metadata >> 34))
+                    address(uint160(_fundingCycle.metadata >> 37))
                 ).redeemParams(
                         _fundingCycle,
                         _count,
@@ -781,12 +794,13 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         if (_accessType == AccessType.AllowWithCallback)
             IFundingCycleDelegate(
-                address(uint160(_fundingCycle.metadata >> 34))
+                address(uint160(_fundingCycle.metadata >> 37))
             ).redeemCallback(
                     _fundingCycle,
                     _count,
                     amount,
                     _beneficiary,
+                    _memo,
                     msg.sender
                 );
 
@@ -892,32 +906,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         migrationIsAllowed[_contract] = !migrationIsAllowed[_contract];
 
         emit AllowMigration(_contract);
-    }
-
-    /** 
-      @notice 
-      Allows governance to transfer its privileges to another contract.
-
-      @dev
-      Only the current governance can transer power to a new governance.
-
-      @param _newGovernance The governance to transition power to. 
-    */
-    function transferGovernance(address _newGovernance)
-        external
-        override
-        onlyGov
-    {
-        // The new governance can't be the zero address.
-        require(
-            _newGovernance != address(0),
-            "TerminalV1::transferGovernance: ZERO_ADDRESS"
-        );
-
-        // Set the govenance to the new value.
-        governance = _newGovernance;
-
-        emit TransferGovernance(_newGovernance);
     }
 
     // --- public transactions --- //
@@ -1110,6 +1098,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         // Get a reference to the current funding cycle for the project.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
+        // Must not be paused.
+        require(
+            ((_fundingCycle.metadata >> 32) & 1) == 1,
+            "TerminalV2:_pay: PAUSED"
+        );
+
         require(_fundingCycle.number > 0, "TerminalV2::_pay: NO_FUNDING_CYCLE");
 
         uint256 _weight;
@@ -1120,14 +1114,14 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             address(uint160(_fundingCycle.metadata >> 34))
         ) ==
             IFundingCycleDelegate(address(0)) &&
-            ((_fundingCycle.metadata >> 32) & 1) == 1
+            ((_fundingCycle.metadata >> 37) & 1) == 1
             ? (
                 _fundingCycle.weight,
                 _memo,
-                AccessType(uint8(_fundingCycle.metadata >> 32))
+                AccessType(uint8(_fundingCycle.metadata >> 35))
             )
             : IFundingCycleDelegate(
-                address(uint160(_fundingCycle.metadata >> 34))
+                address(uint160(_fundingCycle.metadata >> 37))
             ).payParams(
                     _fundingCycle,
                     _amount,
@@ -1191,13 +1185,14 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
 
         if (_accessType == AccessType.AllowWithCallback)
             IFundingCycleDelegate(
-                address(uint160(_fundingCycle.metadata >> 34))
+                address(uint160(_fundingCycle.metadata >> 37))
             ).payCallback(
                     _fundingCycle,
                     _amount,
                     _weight,
                     _ticketCountToPrint,
                     _beneficiary,
+                    _memo,
                     msg.sender
                 );
 
@@ -1211,43 +1206,6 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         );
 
         return _fundingCycle.number;
-    }
-
-    /** 
-      @notice 
-      Gets the amount overflowed in relation to the provided funding cycle.
-
-      @dev
-      This amount changes as the price of ETH changes against the funding cycle's currency.
-
-      @param _currentFundingCycle The ID of the funding cycle to base the overflow on.
-
-      @return overflow The current overflow of funds.
-    */
-    function _overflowFrom(FundingCycle memory _currentFundingCycle)
-        private
-        view
-        returns (uint256)
-    {
-        // Get the current price of ETH.
-        uint256 _ethPrice = prices.getETHPriceFor(
-            _currentFundingCycle.currency
-        );
-
-        // Get a reference to the amount still tappable in the current funding cycle.
-        uint256 _limit = _currentFundingCycle.target -
-            _currentFundingCycle.tapped;
-
-        // The amount of ETH that the owner could currently still tap if its available. This amount isn't considered overflow.
-        uint256 _ethLimit = _limit == 0
-            ? 0
-            : PRBMathUD60x18.div(_limit, _ethPrice);
-
-        // Get the current balance of the project.
-        uint256 _balanceOf = balanceOf[_currentFundingCycle.projectId];
-
-        // Overflow is the balance of this project minus the reserved amount.
-        return _balanceOf < _ethLimit ? 0 : _balanceOf - _ethLimit;
     }
 
     /** 
@@ -1321,12 +1279,18 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
         packed |= _metadata.bondingCurveRate << 16;
         // reconfiguration bonding curve rate in bits 24-31.
         packed |= _metadata.reconfigurationBondingCurveRate << 24;
+        // pause pay in bit 32.
+        packed |= (_metadata.pausePay ? 1 : 0) << 32;
+        // pause tap in bit 33.
+        packed |= (_metadata.pauseTap ? 1 : 0) << 33;
+        // pause redeem  in bit 34.
+        packed |= (_metadata.pauseRedeem ? 1 : 0) << 34;
         // use pay delegate in bit 32.
-        packed |= (_metadata.usePayDelegate ? 1 : 0) << 32;
+        packed |= (_metadata.usePayDelegate ? 1 : 0) << 35;
         // use redeem delegate in bit 33.
-        packed |= (_metadata.useRedeemDelegate ? 1 : 0) << 33;
-        // delegate address in bits 34-193.
-        packed |= uint160(address(_metadata.delegate)) << 34;
+        packed |= (_metadata.useRedeemDelegate ? 1 : 0) << 36;
+        // delegate address in bits 37-196.
+        packed |= uint160(address(_metadata.delegate)) << 37;
     }
 
     /** 
@@ -1384,6 +1348,12 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
             _processedTicketTrackerOf[_projectId],
             uint256(uint8(_fundingCycle.metadata >> 8)),
             _totalTickets
+        );
+
+        // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
+        require(
+            _totalTickets + amount <= uint256(type(int256).max),
+            "TerminalV1::printReservedTickets: INT_LIMIT_REACHED"
         );
 
         // Set the tracker to be the new total supply.
@@ -1474,5 +1444,42 @@ contract TerminalV2 is Operatable, ITerminalV2, ITerminal, ReentrancyGuard {
                     ),
                 200
             );
+    }
+
+    /** 
+      @notice 
+      Gets the amount overflowed in relation to the provided funding cycle.
+
+      @dev
+      This amount changes as the price of ETH changes against the funding cycle's currency.
+
+      @param _currentFundingCycle The ID of the funding cycle to base the overflow on.
+
+      @return overflow The current overflow of funds.
+    */
+    function _overflowFrom(FundingCycle memory _currentFundingCycle)
+        private
+        view
+        returns (uint256)
+    {
+        // Get the current balance of the project.
+        uint256 _balanceOf = balanceOf[_currentFundingCycle.projectId];
+
+        if (_balanceOf == 0) return 0;
+
+        // Get a reference to the amount still tappable in the current funding cycle.
+        uint256 _limit = _currentFundingCycle.target -
+            _currentFundingCycle.tapped;
+
+        // The amount of ETH that the owner could currently still tap if its available. This amount isn't considered overflow.
+        uint256 _ethLimit = _limit == 0
+            ? 0 // Get the current price of ETH.
+            : PRBMathUD60x18.div(
+                _limit,
+                prices.getETHPriceFor(_currentFundingCycle.currency)
+            );
+
+        // Overflow is the balance of this project minus the reserved amount.
+        return _balanceOf < _ethLimit ? 0 : _balanceOf - _ethLimit;
     }
 }
