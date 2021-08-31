@@ -926,7 +926,6 @@ contract TerminalV2DataLayer is
       @param _memo A memo to pass along to the emitted event.
       @param _preferUnstakedTokens Whether ERC20's should be burned first if they have been issued.
 
-      //TODO change operation from redeem to burn permissions.
     */
     function burnTokens(
         address _holder,
@@ -941,7 +940,7 @@ contract TerminalV2DataLayer is
         requirePermissionAllowingWildcardDomain(
             _holder,
             _projectId,
-            Operations.Redeem
+            Operations2.Burn
         )
     {
         // There should be tokens to burn
