@@ -206,7 +206,9 @@ interface ITerminalV2DataLayer {
         external
         returns (uint256 amount);
 
-    function migrate(uint256 _projectId, ITerminal _to) external payable;
+    function migrate(uint256 _projectId, ITerminal _to)
+        external
+        returns (uint256 balance);
 
     function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer) external;
 }

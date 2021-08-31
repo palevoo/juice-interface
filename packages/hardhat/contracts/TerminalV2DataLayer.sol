@@ -8,6 +8,7 @@ import "@paulrberg/contracts/math/PRBMath.sol";
 import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 
 import "./interfaces/IGovernable.sol";
+import "./interfaces/ITerminalDataLayer.sol";
 import "./interfaces/ITerminalV2DataLayer.sol";
 
 import "./abstract/JuiceboxProject.sol";
@@ -26,7 +27,7 @@ import "./libraries/FundingCycleMetadataResolver.sol";
 */
 contract TerminalV2DataLayer is
     ITerminalV2DataLayer,
-    ITerminal,
+    ITerminalDataLayer,
     Ownable,
     Operatable,
     ReentrancyGuard
@@ -520,12 +521,12 @@ contract TerminalV2DataLayer is
         string calldata _memo,
         bool _preferUnstakedTokens
     ) external payable override returns (uint256) {
-        require(msg.sender != owner(), "TODO BAD");
+        require(msg.sender != address(paymentLayer), "TODO BAD");
 
         // This contract should not keep any ETH. It should relay it all
         // to the TerminalVault that owns this terminal.
         return
-            ITerminalV2PaymentLayer(owner()).pay{value: msg.value}(
+            paymentLayer.pay{value: msg.value}(
                 _projectId,
                 _beneficiary,
                 0,
@@ -862,9 +863,9 @@ contract TerminalV2DataLayer is
     */
     function migrate(uint256 _projectId, ITerminal _to)
         external
-        payable
         override
         onlyPaymentLayer
+        returns (uint256 balance)
     {
         // This TerminalV1 must be the project's current terminal.
         require(
@@ -875,31 +876,26 @@ contract TerminalV2DataLayer is
         // The migration destination must be allowed.
         require(migrationIsAllowed[_to], "TerminalV2::migrate: NOT_ALLOWED");
 
-        require(msg.value == balanceOf[_projectId], "TODO BAD");
-
         // All reserved tickets must be printed before migrating.
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
             ticketBooth.totalSupplyOf(_projectId)
         ) _mintReservedTokens(_projectId, "");
 
+        balance = balanceOf[_projectId];
+
         // Set the balance to 0.
         balanceOf[_projectId] = 0;
-
-        // Move the funds to the new contract if needed.
-        if (msg.value > 0) _to.addToBalance{value: msg.value}(_projectId);
 
         // Switch the direct payment terminal.
         terminalDirectory.setTerminal(_projectId, _to);
     }
 
     function addToBalance(uint256 _projectId) external payable override {
-        require(msg.sender != owner(), "TODO BAD");
+        require(msg.sender != address(paymentLayer), "TODO BAD");
         // This contract should not keep any ETH. It should relay it all
         // to the TerminalVault that owns this terminal.
-        ITerminalV2PaymentLayer(owner()).addToBalance{value: msg.value}(
-            _projectId
-        );
+        paymentLayer.addToBalance{value: msg.value}(_projectId);
     }
 
     /**
@@ -917,15 +913,17 @@ contract TerminalV2DataLayer is
     {
         // The amount must be positive.
         require(_amount > 0, "TerminalV1::addToBalance: BAD_AMOUNT");
-        // Set the processed ticket tracker if this isnt the current terminal for the project.
-        if (terminalDirectory.terminalOf(_projectId) != this)
-            // Set the tracker to be the new total supply.
-            _processedTokenTrackerOf[_projectId] = int256(
-                ticketBooth.totalSupplyOf(_projectId)
-            );
-
         // Set the balance.
         balanceOf[_projectId] = balanceOf[_projectId] + msg.value;
+    }
+
+    function prepToReceiveBalanceFor(uint256 _projectId) external override {
+        // Set the processed ticket tracker if this isnt the current terminal for the project.
+        require(terminalDirectory.terminalOf(_projectId) != this, "TODO BAD");
+        // Set the tracker to be the new total supply.
+        _processedTokenTrackerOf[_projectId] = int256(
+            ticketBooth.totalSupplyOf(_projectId)
+        );
     }
 
     /**

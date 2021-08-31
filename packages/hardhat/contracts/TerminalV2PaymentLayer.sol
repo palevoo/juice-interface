@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 import "@paulrberg/contracts/math/PRBMath.sol";
-import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 
 import "./interfaces/ITerminalV2PaymentLayer.sol";
 
@@ -14,8 +13,6 @@ import "./abstract/Operatable.sol";
 
 import "./libraries/Operations.sol";
 import "./libraries/Operations2.sol";
-
-import "./interfaces/ITerminalV2DataLayer.sol";
 
 /**
   @notice 
@@ -301,7 +298,7 @@ contract TerminalV2PaymentLayer is
       @param _projectId The ID of the project being migrated.
       @param _to The contract that will gain the project's funds.
     */
-    function migrate(uint256 _projectId, ITerminal _to)
+    function migrate(uint256 _projectId, ITerminalDataLayer _to)
         external
         override
         nonReentrant
@@ -311,8 +308,13 @@ contract TerminalV2PaymentLayer is
             Operations.Migrate
         )
     {
-        uint256 _balance = dataLayer.balanceOf(_projectId);
-        dataLayer.migrate{value: _balance}(_projectId, _to);
+        _to.prepToReceiveBalanceFor(_projectId);
+
+        uint256 _balance = dataLayer.migrate(_projectId, _to);
+
+        // Move the funds to the new contract if needed.
+        if (_balance > 0) _to.addToBalance{value: _balance}(_projectId);
+
         emit Migrate(_projectId, _to, _balance, msg.sender);
     }
 
@@ -391,7 +393,6 @@ contract TerminalV2PaymentLayer is
                     );
 
                     // Save gas if this contract is being used as the terminal.
-                    //TODO remove addresses
                     if (address(_terminal) == address(dataLayer)) {
                         _pay(
                             _modCut,
@@ -455,7 +456,6 @@ contract TerminalV2PaymentLayer is
         ITerminal _terminal = terminalDirectory.terminalOf(1);
 
         // When processing the admin fee, save gas if the admin is using this contract as its terminal.
-        //TODO remove addresses
         address(_terminal) == address(dataLayer) // Use the local pay call.
             ? _pay(feeAmount, 1, _beneficiary, 0, _memo, false) // Use the external pay call of the correct terminal.
             : _terminal.pay{value: feeAmount}(1, _beneficiary, _memo, false);

@@ -7,6 +7,7 @@ import "./IProjects.sol";
 import "./IModStore.sol";
 import "./ITerminalDirectory.sol";
 import "./ITerminalV2DataLayer.sol";
+import "./ITerminalDataLayer.sol";
 
 interface ITerminalV2PaymentLayer {
     event Pay(
@@ -109,7 +110,7 @@ interface ITerminalV2PaymentLayer {
         address payable _beneficiary
     ) external;
 
-    function migrate(uint256 _projectId, ITerminal _to) external;
+    function migrate(uint256 _projectId, ITerminalDataLayer _to) external;
 
     function addToBalance(uint256 _projectId) external payable;
 }
