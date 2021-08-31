@@ -49,20 +49,12 @@ contract TerminalV2PaymentLayer is
       @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
     */
     constructor(
-        IProjects _projects,
         IOperatorStore _operatorStore,
+        IProjects _projects,
         IModStore _modStore,
         ITerminalDirectory _terminalDirectory,
         ITerminalV2DataLayer _dataLayer
     ) Operatable(_operatorStore) {
-        require(
-            _projects != IProjects(address(0)) &&
-                _operatorStore != IOperatorStore(address(0)) &&
-                _modStore != IModStore(address(0)) &&
-                _terminalDirectory != ITerminalDirectory(address(0)) &&
-                _dataLayer != ITerminalV2DataLayer(address(0)),
-            "TerminalV2: ZERO_ADDRESS"
-        );
         projects = _projects;
         modStore = _modStore;
         terminalDirectory = _terminalDirectory;

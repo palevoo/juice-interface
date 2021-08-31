@@ -199,19 +199,19 @@ contract TerminalV2DataLayer is
     // --- external transactions --- //
 
     /**
+      @param _operatorStore A contract storing operator assignments.
       @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
       @param _fundingCycles The contract storing all funding cycle configurations.
       @param _ticketBooth The contract that manages token minting and burning.
-      @param _operatorStore A contract storing operator assignments.
       @param _modStore The contract that stores split modules for each project.
       @param _prices The contract that exposes price feeds.
       @param _terminalDirectory The directory of terminals.
     */
     constructor(
+        IOperatorStore _operatorStore,
         IProjects _projects,
         IFundingCycles _fundingCycles,
         ITicketBooth _ticketBooth,
-        IOperatorStore _operatorStore,
         IModStore _modStore,
         IPrices _prices,
         ITerminalDirectory _terminalDirectory
