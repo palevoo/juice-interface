@@ -107,6 +107,8 @@ interface ITerminalV2PaymentLayer {
     function useAllowance(
         uint256 _projectId,
         uint256 _amount,
+        uint256 _currency,
+        uint256 _minReturnedWei,
         address payable _beneficiary
     ) external;
 

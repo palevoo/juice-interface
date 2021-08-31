@@ -33,26 +33,26 @@ interface ITerminalV2DataLayer {
         uint256 amount,
         address caller
     );
-    event PrintReserveTokens(
+    event DistributeReservedTokens(
         uint256 indexed fundingCycleNumber,
         uint256 indexed projectId,
         address indexed beneficiary,
         uint256 count,
-        uint256 beneficiaryTokenAmount,
+        uint256 projectOwnerTokenCount,
         string memo,
         address caller
     );
 
-    event DistributeToTicketMod(
+    event DistributeToTokenMod(
         uint256 indexed fundingCycleNumber,
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
         TicketMod mod,
-        uint256 modCut,
+        uint256 tokenCount,
         address caller
     );
 
-    event PrintPreminedTokens(
+    event MintPreminedTokens(
         uint256 indexed projectId,
         address indexed beneficiary,
         uint256 amount,
@@ -124,7 +124,7 @@ interface ITerminalV2DataLayer {
         bool _preferUnstakedTokens
     ) external;
 
-    function deploy(
+    function launchProject(
         address _owner,
         bytes32 _handle,
         string calldata _uri,
@@ -135,7 +135,7 @@ interface ITerminalV2DataLayer {
         TicketMod[] memory _ticketMods
     ) external;
 
-    function configure(
+    function reconfigureFundingCycles(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
@@ -144,25 +144,34 @@ interface ITerminalV2DataLayer {
         TicketMod[] memory _ticketMods
     ) external returns (uint256);
 
-    function addToBalance(uint256 _amount, uint256 _projectId) external payable;
+    function recordAddedBalance(uint256 _amount, uint256 _projectId) external;
 
-    function tap(
+    function recordWithdrawal(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
         uint256 _minReturnedWei
     )
         external
-        returns (FundingCycle memory fundingCycle, uint256 tappedWeiAmount);
+        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount);
 
-    function redeem(
+    function recordUsedAllowance(
+        uint256 _projectId,
+        uint256 _amount,
+        uint256 _currency,
+        uint256 _minReturnedWei
+    )
+        external
+        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount);
+
+    function recordRedemption(
         address _account,
         uint256 _projectId,
         uint256 _amount,
         uint256 _minReturnedWei,
         address payable _beneficiary,
         string calldata _memo,
-        bool _preferUnstaked
+        bool _preferUnstakedTokens
     )
         external
         returns (
@@ -171,15 +180,15 @@ interface ITerminalV2DataLayer {
             string memory _delegatedMemo
         );
 
-    function burn(
+    function burnTokens(
         address _holder,
         uint256 _projectId,
         uint256 _tokenCount,
         string calldata _memo,
-        bool _preferUnstaked
+        bool _preferUnstakedTokens
     ) external;
 
-    function pay(
+    function recordPayment(
         address payer,
         uint256 _amount,
         uint256 _projectId,
@@ -196,15 +205,11 @@ interface ITerminalV2DataLayer {
             string memory delegatedMemo
         );
 
-    function useAllowance(uint256 _projectId, uint256 _amount)
-        external
-        returns (FundingCycle memory fundingCycle);
-
-    function mintReservedTokens(uint256 _projectId, string memory _memo)
+    function distributeReservedTokens(uint256 _projectId, string memory _memo)
         external
         returns (uint256 amount);
 
-    function migrate(uint256 _projectId, ITerminal _to)
+    function recordMigration(uint256 _projectId, ITerminal _to)
         external
         returns (uint256 balance);
 

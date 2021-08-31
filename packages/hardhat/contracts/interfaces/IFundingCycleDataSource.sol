@@ -8,9 +8,9 @@ import "./IRedeemDelegate.sol";
 
 interface IFundingCycleDataSource {
     function payData(
-        FundingCycle calldata _fundingCycle,
         address _payer,
         uint256 _amount,
+        uint256 _baseWeight,
         address _beneficiary,
         string calldata _memo
     )
@@ -22,7 +22,6 @@ interface IFundingCycleDataSource {
         );
 
     function redeemData(
-        FundingCycle calldata _fundingCycle,
         address _holder,
         uint256 _count,
         address _beneficiary,

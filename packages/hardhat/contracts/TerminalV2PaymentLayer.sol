@@ -128,8 +128,13 @@ contract TerminalV2PaymentLayer is
     ) external override nonReentrant returns (uint256) {
         (
             FundingCycle memory _fundingCycle,
-            uint256 _tappedWeiAmount
-        ) = dataLayer.tap(_projectId, _amount, _currency, _minReturnedWei);
+            uint256 _withdrawnAmount
+        ) = dataLayer.recordWithdrawal(
+                _projectId,
+                _amount,
+                _currency,
+                _minReturnedWei
+            );
 
         // Get a reference to the project owner, which will receive the admin's tickets from paying the fee,
         // and receive any extra tapped funds not allocated to mods.
@@ -138,12 +143,12 @@ contract TerminalV2PaymentLayer is
         // Get a reference to the handle of the project paying the fee and sending payouts.
         bytes32 _handle = projects.handleOf(_projectId);
 
-        // Take a fee from the _tappedWeiAmount, if needed.
+        // Take a fee from the _withdrawnAmount, if needed.
         // The project's owner will be the beneficiary of the resulting printed tickets from the governance project.
         uint256 _feeAmount = _fundingCycle.fee == 0 || _projectId == 1
             ? 0
             : _takeFee(
-                _tappedWeiAmount,
+                _withdrawnAmount,
                 _fundingCycle.fee,
                 _projectOwner,
                 string(bytes.concat("Fee from @", _handle))
@@ -155,7 +160,7 @@ contract TerminalV2PaymentLayer is
             _fundingCycle.id,
             _fundingCycle.configured,
             _projectId,
-            _tappedWeiAmount - _feeAmount,
+            _withdrawnAmount - _feeAmount,
             string(bytes.concat("Payout from @", _handle))
         );
 
@@ -168,7 +173,7 @@ contract TerminalV2PaymentLayer is
             _projectId,
             _projectOwner,
             _amount,
-            _tappedWeiAmount,
+            _withdrawnAmount,
             _feeAmount,
             _leftoverTransferAmount,
             _memo,
@@ -178,7 +183,7 @@ contract TerminalV2PaymentLayer is
         return _fundingCycle.id;
     }
 
-    /** 
+    /**
       @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
       @param _projectId The ID of the project to use the allowance of.
       @param _amount The amount of the allowance to use.
@@ -187,6 +192,8 @@ contract TerminalV2PaymentLayer is
     function useAllowance(
         uint256 _projectId,
         uint256 _amount,
+        uint256 _currency,
+        uint256 _minReturnedWei,
         address payable _beneficiary
     )
         external
@@ -198,18 +205,23 @@ contract TerminalV2PaymentLayer is
             Operations2.UseAllowance
         )
     {
-        FundingCycle memory _fundingCycle = dataLayer.useAllowance(
-            _projectId,
-            _amount
-        );
+        (
+            FundingCycle memory _fundingCycle,
+            uint256 _withdrawnAmount
+        ) = dataLayer.recordUsedAllowance(
+                _projectId,
+                _amount,
+                _currency,
+                _minReturnedWei
+            );
 
         // Otherwise, send the funds directly to the beneficiary.
-        Address.sendValue(_beneficiary, _amount);
+        Address.sendValue(_beneficiary, _withdrawnAmount);
 
         emit UseAllowance(
             _projectId,
             _fundingCycle.configured,
-            _amount,
+            _withdrawnAmount,
             _beneficiary,
             msg.sender
         );
@@ -254,7 +266,7 @@ contract TerminalV2PaymentLayer is
         FundingCycle memory _fundingCycle;
         uint256 _claimAmount;
 
-        (_fundingCycle, _claimAmount, _memo) = dataLayer.redeem(
+        (_fundingCycle, _claimAmount, _memo) = dataLayer.recordRedemption(
             _holder,
             _projectId,
             _tokenCount,
@@ -308,9 +320,9 @@ contract TerminalV2PaymentLayer is
             Operations.Migrate
         )
     {
-        _to.prepToReceiveBalanceFor(_projectId);
+        _to.prepForMigrationOf(_projectId);
 
-        uint256 _balance = dataLayer.migrate(_projectId, _to);
+        uint256 _balance = dataLayer.recordMigration(_projectId, _to);
 
         // Move the funds to the new contract if needed.
         if (_balance > 0) _to.addToBalance{value: _balance}(_projectId);
@@ -325,7 +337,7 @@ contract TerminalV2PaymentLayer is
       @param _projectId The ID of the project to which the funds received belong.
     */
     function addToBalance(uint256 _projectId) external payable override {
-        dataLayer.addToBalance(msg.value, _projectId);
+        dataLayer.recordAddedBalance(msg.value, _projectId);
         emit AddToBalance(_projectId, msg.value, msg.sender);
     }
 
@@ -483,7 +495,7 @@ contract TerminalV2PaymentLayer is
         uint256 _weight;
         uint256 _tokenCount;
 
-        (_fundingCycle, _weight, _tokenCount, _memo) = dataLayer.pay(
+        (_fundingCycle, _weight, _tokenCount, _memo) = dataLayer.recordPayment(
             msg.sender,
             _amount,
             _projectId,

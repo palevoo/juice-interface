@@ -216,15 +216,6 @@ contract TerminalV2DataLayer is
         IPrices _prices,
         ITerminalDirectory _terminalDirectory
     ) Operatable(_operatorStore) {
-        require(
-            _projects != IProjects(address(0)) &&
-                _fundingCycles != IFundingCycles(address(0)) &&
-                _ticketBooth != ITicketBooth(address(0)) &&
-                _modStore != IModStore(address(0)) &&
-                _prices != IPrices(address(0)) &&
-                _terminalDirectory != ITerminalDirectory(address(0)),
-            "TV2DL: ZERO_ADDRESS"
-        );
         projects = _projects;
         fundingCycles = _fundingCycles;
         ticketBooth = _ticketBooth;
@@ -235,7 +226,7 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Deploys a project. This will mint an ERC-721 into the `_owner`'s account, configure a first funding cycle, and set up any split modules.
+      Creates a project. This will mint an ERC-721 into the `_owner`'s account, configure a first funding cycle, and set up any split modules.
 
       @dev
       Each operation withing this transaction can be done in sequence separately.
@@ -276,7 +267,7 @@ contract TerminalV2DataLayer is
       @param _payoutMods Any payout split modules to set.
       @param _tokenMods Any token split modules to set.
     */
-    function deploy(
+    function launchProject(
         address _owner,
         bytes32 _handle,
         string calldata _uri,
@@ -334,7 +325,7 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Configures the properties of the current funding cycle if the project hasn't distributed tickets yet, or
+      Configures the properties of the current funding cycle if the project hasn't distributed tokens yet, or
       sets the properties of the proposed funding cycle that will take effect once the current one expires
       if it is approved by the current funding cycle's ballot.
 
@@ -371,7 +362,7 @@ contract TerminalV2DataLayer is
 
       @return The ID of the funding cycle that was successfully configured.
     */
-    function configure(
+    function reconfigureFundingCycles(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
@@ -398,7 +389,7 @@ contract TerminalV2DataLayer is
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
             ticketBooth.totalSupplyOf(_projectId)
-        ) _mintReservedTokens(_projectId, "");
+        ) _distributeReservedTokens(_projectId, "");
 
         // If the project can still mint premined tokens, configure the active funding cycle instead of queuing one for after the active one expires.
         bool _shouldConfigureActive = canMintPreminedTokens(_projectId);
@@ -443,22 +434,23 @@ contract TerminalV2DataLayer is
     }
 
     /**
-      HERE
       @notice
-      Allows a project to print tokens for a specified beneficiary before payments have been received.
+      Allows a project to mint tokens for a specified beneficiary before it has started receiving payments.
 
       @dev
       This can only be done if the project hasn't yet received a payment after configuring a funding cycle.
 
       @dev
-      Only a project's owner or a designated operator can print premined tokens.
+      Only a project's owner or a designated operator can mint premined tokens.
 
       @param _projectId The ID of the project to premine tokens for.
-      @param _amount The amount to base the token premine off of.
-      @param _currency The currency of the amount to base the token premine off of.
-      @param _beneficiary The address to send the printed tokens to.
-      @param _memo A memo to leave with the printing.
-      @param _preferUnstakedTokens If there is a preference to unstake the printed tokens.
+      @param _amount The amount to base the token premine off of, in wei (10^18)
+      @param _currency The currency of the amount to base the token premine off of. Send 0 for ETH or 1 for USD.
+      @param _weight The number of tokens minted per ETH amount specified is determined by the weight. If this is left at 0, the BASE_WEIGHT of the first funding cycle is used (10^24, 18 decimals). 
+        For example, if the `_currency` specified is ETH and the `_weight` specified is 10^20, then an `_amount` of 1 ETH (sent as 10^18) will mint 100 tokens.
+      @param _beneficiary The address to send the minted tokens to.
+      @param _memo A memo to leave with the emitted event.
+      @param _preferUnstakedTokens If there is a preference to unstake the minted tokens.
     */
     function mintPreminedTokens(
         uint256 _projectId,
@@ -479,39 +471,34 @@ contract TerminalV2DataLayer is
         )
     {
         // Can't send to the zero address.
+        require(_beneficiary != address(0), "TV2DL::MPT: ZERO_ADDRESS");
+
+        // Make sure the project can mint tokens.
         require(
-            _beneficiary != address(0),
-            "TerminalV2::printPreminedTickets: ZERO_ADDRESS"
+            canMintPreminedTokens(_projectId),
+            "TV2DL::MPT: ALREADY_ACTIVE"
         );
 
-        // Get the current funding cycle to read the weight and currency from.
+        // If a weight isn't specified, get the current funding cycle to read the weight from.
         _weight = _weight > 0 ? _weight : fundingCycles.BASE_WEIGHT();
 
-        // Get the current funding cycle to read the weight and currency from.
-        // Multiply the amount by the funding cycle's weight to determine the amount of tokens to print.
+        // Multiply the amount with the weight to determine the number of tokens to mint.
         uint256 _weightedAmount = PRBMathUD60x18.mul(
             PRBMathUD60x18.div(_amount, prices.getETHPriceFor(_currency)),
             _weight
         );
 
-        // Make sure the project hasnt printed tokens that werent preconfigure.
-        // Do this check after the external calls above.
-        require(
-            canMintPreminedTokens(_projectId),
-            "TerminalV2::canMintPreminedTokens: ALREADY_ACTIVE"
-        );
-
-        // Set the preconfigure tickets as processed so that reserved tickets cant be minted against them.
+        // Set the preconfigure tokens as processed so that reserved tokens cant be minted against them.
         _processedTokenTrackerOf[_projectId] =
             _processedTokenTrackerOf[_projectId] +
             int256(_weightedAmount);
 
-        // Set the count of preconfigure tickets this project has printed.
+        // Set the count of preconfigure tokens this project has printed.
         _preconfigureTokenCountOf[_projectId] =
             _preconfigureTokenCountOf[_projectId] +
             _weightedAmount;
 
-        // Print the project's tickets for the beneficiary.
+        // Mint the project's tokens for the beneficiary.
         ticketBooth.print(
             _beneficiary,
             _projectId,
@@ -519,7 +506,7 @@ contract TerminalV2DataLayer is
             _preferUnstakedTokens
         );
 
-        emit PrintPreminedTokens(
+        emit MintPreminedTokens(
             _projectId,
             _beneficiary,
             _amount,
@@ -533,20 +520,14 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Contribute ETH to a project.
-
-      @dev
-      Print's the project's tickets proportional to the amount of the contribution.
-
-      @dev
-      The msg.value is the amount of the contribution in wei.
+      This call forwards all ETH received to the payment layer and does not modify state.
 
       @param _projectId The ID of the project being contribute to.
-      @param _beneficiary The address to print Tickets for.
+      @param _beneficiary The address to mint tokens for.
       @param _memo A memo that will be included in the published event.
-      @param _preferUnstakedTokens Whether ERC20's should be unstaked automatically if they have been issued.
+      @param _preferUnstakedTokens Whether tokens should be unstaked automatically if ERC20's have been issued.
 
-      @return The ID of the funding cycle that the payment was made during.
+      @return The number of the funding cycle that the payment was made during.
     */
     function pay(
         uint256 _projectId,
@@ -554,10 +535,10 @@ contract TerminalV2DataLayer is
         string calldata _memo,
         bool _preferUnstakedTokens
     ) external payable override returns (uint256) {
-        require(msg.sender != address(paymentLayer), "TODO BAD");
+        // The payment layer should never make a call to this function.
+        require(msg.sender != address(paymentLayer), "TV2DL::P: FORBIDDEN");
 
-        // This contract should not keep any ETH. It should relay it all
-        // to the TerminalVault that owns this terminal.
+        // This contract should forward the parameters and all ETH received to the payment layer.
         return
             paymentLayer.pay{value: msg.value}(
                 _projectId,
@@ -568,26 +549,33 @@ contract TerminalV2DataLayer is
             );
     }
 
-    // /**
-    //   @notice
-    //   Contribute ETH to a project.
+    /**
+      @notice
+      Records newly contributed ETH to a project made at the payment layer.
 
-    //   @dev
-    //   Print's the project's tickets proportional to the amount of the contribution.
+      @dev
+      Mint's the project's tokens according to values provided by a configured data source. If no data source is configured, mints tokens proportional to the amount of the contribution.
 
-    //   @dev
-    //   The msg.value is the amount of the contribution in wei.
+      @dev
+      The msg.value is the amount of the contribution in wei.
 
-    //   @param _amount The amount that is being paid.
-    //   @param _projectId The ID of the project being contribute to.
-    //   @param _beneficiary The address to print Tickets for.
-    //   @param _minReturnedTickets The minimum number of tickets expected in return.
-    //   @param _memo A memo that will be included in the published event.
-    //   @param _preferUnstakedTokens Whether ERC20's should be unstaked automatically if they have been issued.
+      @dev
+      Only the payment layer can record a payment.
 
-    //   @return The ID of the funding cycle that the payment was made during.
-    // */
-    function pay(
+      @param _payer The original address that sent the payment to the payment layer.
+      @param _amount The amount that is being paid.
+      @param _projectId The ID of the project being contribute to.
+      @param _beneficiary The address that should receive benefits from the payment.
+      @param _minReturnedTokens The minimum number of tokens expected in return.
+      @param _memo A memo that will be included in the published event.
+      @param _preferUnstakedTokens Whether ERC20's should be unstaked automatically if they have been issued.
+
+      @return fundingCycle The funding cycle during which payment was made.
+      @return weight The weight according to which new token supply was minted.
+      @return tokenCount The number of tokens that were minted.
+      @return memo A memo that should be included in the published event.
+    */
+    function recordPayment(
         address _payer,
         uint256 _amount,
         uint256 _projectId,
@@ -609,63 +597,72 @@ contract TerminalV2DataLayer is
         // Get a reference to the current funding cycle for the project.
         fundingCycle = fundingCycles.currentOf(_projectId);
 
+        // The project must have a funding cycle configured.
+        require(fundingCycle.number > 0, "TV2DL::RP: NO_FUNDING_CYCLE");
+
         // Must not be paused.
-        require(!fundingCycle.payPaused(), "TerminalV2:_pay: PAUSED");
+        require(!fundingCycle.payPaused(), "TV2DL::RP: PAUSED");
 
-        require(fundingCycle.number > 0, "TerminalV2::_pay: NO_FUNDING_CYCLE");
-
+        // Save a reference to the delegate to use.
         IPayDelegate _delegate;
 
-        // The bit that signals whether or not the data source should be used is it bit 37 of the funding cycle's metadata.
+        // If the funding cycle has configured a data source, use it to derive a weight and memo.
         if (fundingCycle.useDataSourceForPay()) {
             (weight, memo, _delegate) = IFundingCycleDataSource(
                 fundingCycle.dataSource()
-            ).payData(fundingCycle, _payer, _amount, _beneficiary, _memo);
+            ).payData(
+                    _payer,
+                    _amount,
+                    fundingCycle.weight,
+                    _beneficiary,
+                    _memo
+                );
+            // Otherwise use the funding cycle's weight
         } else {
             weight = fundingCycle.weight;
             memo = _memo;
         }
 
-        // scope to avoid stack too deep errors. Inspired by uniswap https://github.com/Uniswap/uniswap-v2-periphery/blob/69617118cda519dab608898d62aaa79877a61004/contracts/UniswapV2Router02.sol#L327-L333.
+        // Scope to avoid stack too deep errors.
+        // Inspired by uniswap https://github.com/Uniswap/uniswap-v2-periphery/blob/69617118cda519dab608898d62aaa79877a61004/contracts/UniswapV2Router02.sol#L327-L333.
         {
-            // Multiply the amount by the funding cycle's weight to determine the amount of tickets to print.
+            // Multiply the amount by the weight to determine the amount of tokens to mint.
             uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, weight);
 
-            // Only print the tickets that are unreserved.
+            // Only print the tokens that are unreserved.
             tokenCount = PRBMath.mulDiv(
                 _weightedAmount,
-                // The reserved rate is stored in bits 8-15 of the metadata property.
                 200 - fundingCycle.reservedRate(),
                 200
             );
-            // The minimum amount of unreserved tickets must be printed.
-            require(
-                tokenCount >= _minReturnedTokens,
-                "TerminalV2::_pay: INADEQUATE"
-            );
 
-            // Add to the balance of the project.
+            // The token count must be greater than or equal to the minimum expected.
+            require(tokenCount >= _minReturnedTokens, "TV2DL::RP: INADEQUATE");
+
+            // Add the amount to the balance of the project.
             balanceOf[_projectId] = balanceOf[_projectId] + _amount;
-            // If theres an unreserved weighted amount, print tickets representing this amount for the beneficiary.
+
+            // Mint tokens if needed.
             if (tokenCount > 0) {
-                // Print the project's tickets for the beneficiary.
+                // Mint the project's tokens for the beneficiary.
                 ticketBooth.print(
                     _beneficiary,
                     _projectId,
                     tokenCount,
                     _preferUnstakedTokens
                 );
+                // If all tokens are reserved, updated the token tracker to reflect this.
             } else if (_weightedAmount > 0) {
-                // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
+                // Subtract the total weighted amount from the tracker so the full reserved token amount can be printed later.
                 _processedTokenTrackerOf[_projectId] =
                     _processedTokenTrackerOf[_projectId] -
                     int256(_weightedAmount);
             }
         }
 
+        // If a delegate was returned by the data source, issue a callback to it.
         if (_delegate != IPayDelegate(address(0)))
             _delegate.didPay(
-                fundingCycle,
                 _payer,
                 _amount,
                 weight,
@@ -675,21 +672,22 @@ contract TerminalV2DataLayer is
             );
     }
 
-    // /**
-    //   @notice
-    //   Tap into funds that have been contributed to a project's current funding cycle.
+    /**
+      @notice
+      Records newly withdrawn funds for a project made at the payment layer.
 
-    //   @dev
-    //   Anyone can tap funds on a project's behalf.
+      @dev
+      Only the payment layer can record a withdrawal.
 
-    //   @param _projectId The ID of the project to which the funding cycle being tapped belongs.
-    //   @param _amount The amount being tapped, in the funding cycle's currency.
-    //   @param _currency The expected currency being tapped.
-    //   @param _minReturnedWei The minimum number of wei that the amount should be valued at.
+      @param _projectId The ID of the project that is having funds withdrawn.
+      @param _amount The amount being withdrawn. Send as wei (18 decimals).
+      @param _currency The expected currency of the `_amount` being tapped. This must match the project's current funding cycle's currency.
+      @param _minReturnedWei The minimum number of wei that should be withdrawn.
 
-    //   @return The ID of the funding cycle that was tapped.
-    // */
-    function tap(
+      @return fundingCycle The funding cycle during which the withdrawal was made.
+      @return withdrawnAmount The amount withdrawn.
+    */
+    function recordWithdrawal(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -698,101 +696,133 @@ contract TerminalV2DataLayer is
         external
         override
         onlyPaymentLayer
-        returns (FundingCycle memory fundingCycle, uint256 tappedWeiAmount)
+        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount)
     {
-        // Register the funds as tapped. Get the ID of the funding cycle that was tapped.
+        // Registers the funds as withdrawn and gets the ID of the funding cycle during which this withdrawal is being made.
         fundingCycle = fundingCycles.tap(_projectId, _amount);
 
-        // If there's no funding cycle, there are no funds to tap.
-        require(fundingCycle.id > 0, "TerminalV2::tap: NOT_FOUND");
+        // Funds cannot be withdrawn if there's no funding cycle.
+        require(fundingCycle.id > 0, "TV2DL::RW: NOT_FOUND");
 
-        // Must not be paused.
-        require(!fundingCycle.tapPaused(), "TerminalV2::tap: PAUSED");
+        // The funding cycle must not be paused.
+        require(!fundingCycle.tapPaused(), "TV2DL::RW: PAUSED");
 
-        // Make sure the currency's match.
+        // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "TerminalV2::tap: UNEXPECTED_CURRENCY"
+            "TV2DL::RW: UNEXPECTED_CURRENCY"
         );
 
-        // The amount of ETH that is being tapped.
-        tappedWeiAmount = PRBMathUD60x18.div(
+        // Convert the amount to wei.
+        withdrawnAmount = PRBMathUD60x18.div(
             _amount,
             prices.getETHPriceFor(fundingCycle.currency)
         );
 
-        // The amount being tapped must be at least as much as was expected.
+        // The amount being withdrawn must be at least as much as was expected.
+        require(_minReturnedWei <= withdrawnAmount, "TV2DL::RW: INADEQUATE");
+
+        // The amount being withdrawn must be available.
         require(
-            _minReturnedWei <= tappedWeiAmount,
-            "TerminalV2::tap: INADEQUATE"
+            withdrawnAmount <= balanceOf[_projectId],
+            "TV2DL::RW: INSUFFICIENT_FUNDS"
         );
 
-        // The amount being tapped must be available.
-        require(
-            tappedWeiAmount <= balanceOf[_projectId],
-            "TerminalV2::tap: INSUFFICIENT_FUNDS"
-        );
-
-        // Removed the tapped funds from the project's balance.
-        balanceOf[_projectId] = balanceOf[_projectId] - tappedWeiAmount;
+        // Removed the withdrawn funds from the project's balance.
+        balanceOf[_projectId] = balanceOf[_projectId] - withdrawnAmount;
     }
 
     /** 
-      @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
+      @notice 
+      Records newly used allowance funds of a project made at the payment layer.
+
+      @dev
+      Only the payment layer can record used allowance.
+
       @param _projectId The ID of the project to use the allowance of.
       @param _amount The amount of the allowance to use.
+
+      @return fundingCycle The funding cycle during which the withdrawal is being made.
+      @return withdrawnAmount The amount withdrawn.
     */
-    function useAllowance(uint256 _projectId, uint256 _amount)
+    function recordUsedAllowance(
+        uint256 _projectId,
+        uint256 _amount,
+        uint256 _currency,
+        uint256 _minReturnedWei
+    )
         external
         override
         onlyPaymentLayer
-        returns (FundingCycle memory fundingCycle)
+        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount)
     {
         // Get a reference to the project's current funding cycle.
         fundingCycle = fundingCycles.currentOf(_projectId);
 
+        // Make sure the currencies match.
         require(
-            _amount <= balanceOf[_projectId],
-            "TerminalV2::tapAllowance: INSUFFICIENT_FUNDS"
+            _currency == fundingCycle.currency,
+            "TV2DL::RUA: UNEXPECTED_CURRENCY"
+        );
+
+        // Convert the amount to wei.
+        withdrawnAmount = PRBMathUD60x18.div(
+            _amount,
+            prices.getETHPriceFor(fundingCycle.currency)
         );
 
         // There must be sufficient allowance available.
         require(
-            _amount <= overflowAllowanceOf[_projectId][fundingCycle.configured],
-            "TerminalV2DataLayer::decrementAllowance: NOT_ALLOWED"
+            withdrawnAmount <=
+                overflowAllowanceOf[_projectId][fundingCycle.configured],
+            "TV2DL::RUA: NOT_ALLOWED"
+        );
+
+        // The amount being withdrawn must be at least as much as was expected.
+        require(_minReturnedWei <= withdrawnAmount, "TV2DL::RUA: INADEQUATE");
+
+        // The amount being withdrawn must be available.
+        require(
+            withdrawnAmount <= balanceOf[_projectId],
+            "TV2DL::RUA: INSUFFICIENT_FUNDS"
         );
 
         // Store the decremented value.
         overflowAllowanceOf[_projectId][fundingCycle.configured] =
             overflowAllowanceOf[_projectId][fundingCycle.configured] -
-            _amount;
+            withdrawnAmount;
 
-        balanceOf[_projectId] = balanceOf[_projectId] - _amount;
+        // Update the project's balance.
+        balanceOf[_projectId] = balanceOf[_projectId] - withdrawnAmount;
     }
 
-    // /**
-    //   @notice
-    //   Addresses can redeem their Tickets to claim the project's overflowed ETH.
+    /**
+      @notice
+      Records newly redeemed tokens of a project made at the payment layer.
 
-    //   @dev
-    //   Only a ticket's holder or a designated operator can redeem it.
+      @dev
+      Only the payment layer can record redemptions.
 
-    //   @param _holder The account to redeem tickets for.
-    //   @param _projectId The ID of the project to which the Tickets being redeemed belong.
-    //   @param _tokenCount The number of Tickets to redeem.
-    //   @param _minReturnedWei The minimum amount of Wei expected in return.
-    //   @param _preferUnstaked If the preference is to redeem tickets that have been converted to ERC-20s.
+      @param _holder The account that is having its tokens redeemed.
+      @param _projectId The ID of the project to which the tokens being redeemed belong.
+      @param _tokenCount The number of tokens to redeem.
+      @param _minReturnedWei The minimum amount of wei expected in return.
+      @param _beneficiary The account that will benefit from the claimed amount.
+      @param _memo A memo to pass along to the emitted event.
+      @param _preferUnstakedTokens Whether ERC20's should be redeemed first if they have been issued.
 
-    //   @return amount The amount of ETH that the tickets were redeemed for.
-    // */
-    function redeem(
+      @return fundingCycle The funding cycle during which the redemption was made.
+      @return claimAmount The amount claimed.
+      @return memo A memo that should be passed along to the emitted event.
+    */
+    function recordRedemption(
         address _holder,
         uint256 _projectId,
         uint256 _tokenCount,
         uint256 _minReturnedWei,
         address payable _beneficiary,
         string calldata _memo,
-        bool _preferUnstaked
+        bool _preferUnstakedTokens
     )
         external
         override
@@ -803,55 +833,49 @@ contract TerminalV2DataLayer is
             string memory memo
         )
     {
-        // The holder must have the specified number of the project's tickets.
+        // The holder must have the specified number of the project's tokens.
         require(
             ticketBooth.balanceOf(_holder, _projectId) >= _tokenCount,
-            "TerminalV2::redeem: INSUFFICIENT_TICKETS"
+            "TV2DL::RR: INSUFFICIENT_TOKENS"
         );
 
-        // Get a reference to the current funding cycle for the project.
+        // Get a reference to the project's current funding cycle.
         fundingCycle = fundingCycles.currentOf(_projectId);
 
-        // Must not be paused.
-        require(fundingCycle.redeemPaused(), "TerminalV2:redeem: PAUSED");
+        // The current funding cycle must not be paused.
+        require(fundingCycle.redeemPaused(), "TV2DL:RR: PAUSED");
 
+        // Save a reference to the delegate to use.
         IRedeemDelegate _delegate;
 
-        // The bit that signals whether or not the delegate should be used is it bit 36 of the funding cycle's metadata.
+        // If the funding cycle has configured a data source, use it to derive a claim amount and memo.
         if (fundingCycle.useDataSourceForRedeem()) {
             (claimAmount, memo, _delegate) = IFundingCycleDataSource(
                 fundingCycle.dataSource()
-            ).redeemData(
-                    fundingCycle,
-                    _holder,
-                    _tokenCount,
-                    _beneficiary,
-                    _memo
-                );
+            ).redeemData(_holder, _tokenCount, _beneficiary, _memo);
         } else {
             claimAmount = _claimableOverflowOf(fundingCycle, _tokenCount);
             memo = _memo;
         }
 
         // The amount being claimed must be at least as much as was expected.
-        require(
-            claimAmount >= _minReturnedWei,
-            "TerminalV2::redeem: INADEQUATE"
-        );
+        require(claimAmount >= _minReturnedWei, "TV2DL::RR: INADEQUATE");
 
+        // The amount being claimed must be within the project's balance.
         require(
             claimAmount <= balanceOf[_projectId],
-            "TerminalV2::redeem: INSUFFICIENT_FUNDS"
+            "TV2DL::RR: INSUFFICIENT_FUNDS"
         );
 
-        // Redeem the tickets, which burns them.
+        // Redeem the tokens, which burns them.
         if (_tokenCount > 0) {
+            // Update the token tracker so that reserved tokens will still be correctly mintable.
             _subtractFromTokenTracker(_projectId, _tokenCount);
             ticketBooth.redeem(
                 _holder,
                 _projectId,
                 _tokenCount,
-                _preferUnstaked
+                _preferUnstakedTokens
             );
         }
 
@@ -859,7 +883,7 @@ contract TerminalV2DataLayer is
         if (claimAmount > 0)
             balanceOf[_projectId] = balanceOf[_projectId] - claimAmount;
 
-        // If a the delegate shouldn't get called back, don't return it.
+        // If a delegate was returned by the data source, issue a callback to it.
         if (_delegate != IRedeemDelegate(address(0)))
             _delegate.didRedeem(
                 fundingCycle,
@@ -871,89 +895,162 @@ contract TerminalV2DataLayer is
             );
     }
 
-    function burn(
+    /**
+      @notice
+      Mints and distributes all outstanding reserved tokens for a project.
+
+      @param _projectId The ID of the project to which the reserved tokens belong.
+      @param _memo A memo to leave with the emitted event.
+
+      @return The amount of reserved tokens that were minted.
+    */
+    function distributeReservedTokens(uint256 _projectId, string memory _memo)
+        external
+        override
+        nonReentrant
+        returns (uint256)
+    {
+        return _distributeReservedTokens(_projectId, _memo);
+    }
+
+    /**
+      @notice
+      Burns a token holder's supply.
+
+      @dev
+      Only a token's holder or a designated operator can migrate it.
+
+      @param _holder The account that is having its tokens burned.
+      @param _projectId The ID of the project to which the tokens being burned belong.
+      @param _tokenCount The number of tokens to burn.
+      @param _memo A memo to pass along to the emitted event.
+      @param _preferUnstakedTokens Whether ERC20's should be burned first if they have been issued.
+
+      //TODO change operation from redeem to burn permissions.
+    */
+    function burnTokens(
         address _holder,
         uint256 _projectId,
         uint256 _tokenCount,
         string calldata _memo,
-        bool _preferUnstaked
-    ) external override {
-        require(_tokenCount > 0, "TerminalV2DataLayer::burn: NO_OP");
+        bool _preferUnstakedTokens
+    )
+        external
+        override
+        nonReentrant
+        requirePermissionAllowingWildcardDomain(
+            _holder,
+            _projectId,
+            Operations.Redeem
+        )
+    {
+        // There should be tokens to burn
+        require(_tokenCount > 0, "TV2DL::BT: NO_OP");
+        // Update the token tracker so that reserved tokens will still be correctly mintable.
         _subtractFromTokenTracker(_projectId, _tokenCount);
-        ticketBooth.redeem(_holder, _projectId, _tokenCount, _preferUnstaked);
+        // Redeem the tokens, which burns them.
+        ticketBooth.redeem(
+            _holder,
+            _projectId,
+            _tokenCount,
+            _preferUnstakedTokens
+        );
         emit Burn(_holder, _projectId, _tokenCount, _memo, msg.sender);
     }
 
     /**
       @notice
-      Allows a project owner to migrate its funds and operations to a new contract.
+      Allows a project owner to migrate its funds and treasury operations to a new contract.
 
       @dev
-      Only a project's owner or a designated operator can migrate it.
+      Only the payment layer can record migrations.
 
       @param _projectId The ID of the project being migrated.
       @param _to The contract that will gain the project's funds.
     */
-    function migrate(uint256 _projectId, ITerminal _to)
+    function recordMigration(uint256 _projectId, ITerminal _to)
         external
         override
         onlyPaymentLayer
         returns (uint256 balance)
     {
-        // This TerminalV1 must be the project's current terminal.
+        // This contract must be the project's current terminal.
         require(
             terminalDirectory.terminalOf(_projectId) == this,
-            "TerminalV2::migrate: UNAUTHORIZED"
+            "TV2DL::RM: UNAUTHORIZED"
         );
 
         // The migration destination must be allowed.
-        require(migrationIsAllowed[_to], "TerminalV2::migrate: NOT_ALLOWED");
+        require(migrationIsAllowed[_to], "TV2DL::RM: NOT_ALLOWED");
 
-        // All reserved tickets must be printed before migrating.
+        // All reserved tokens must be minted before migrating.
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
             ticketBooth.totalSupplyOf(_projectId)
-        ) _mintReservedTokens(_projectId, "");
+        ) _distributeReservedTokens(_projectId, "");
 
+        // Get a reference to the project's currently recorded balance.
         balance = balanceOf[_projectId];
 
         // Set the balance to 0.
         balanceOf[_projectId] = 0;
 
-        // Switch the direct payment terminal.
+        // Switch the terminal that the terminal directory will point to for this project.
         terminalDirectory.setTerminal(_projectId, _to);
     }
 
+    /**
+      @notice
+      This call forwards all ETH received to the payment layer and does not modify state.
+
+      @param _projectId The ID of the project being funded.
+    */
     function addToBalance(uint256 _projectId) external payable override {
-        require(msg.sender != address(paymentLayer), "TODO BAD");
-        // This contract should not keep any ETH. It should relay it all
-        // to the TerminalVault that owns this terminal.
+        require(msg.sender != address(paymentLayer), "TV2DL::ATB: FORBIDDEN");
+        // This contract should forward the parameters and all ETH received to the payment layer.
         paymentLayer.addToBalance{value: msg.value}(_projectId);
     }
 
     /**
       @notice
-      Receives and allocates funds belonging to the specified project.
+      Records newly added funds for the project made at the payment layer.
 
-      @param _amount The amount being added.
-      @param _projectId The ID of the project to which the funds received belong.
+      @dev
+      Only the payment layer can record added balance.
+
+      @param _amount The amount added, in wei.
+      @param _projectId The ID of the project to which the funds being added belong.
     */
-    function addToBalance(uint256 _amount, uint256 _projectId)
+    function recordAddedBalance(uint256 _amount, uint256 _projectId)
         external
-        payable
         override
         onlyPaymentLayer
     {
         // The amount must be positive.
-        require(_amount > 0, "TerminalV1::addToBalance: BAD_AMOUNT");
+        require(_amount > 0, "TV2DL::RAB: BAD_AMOUNT");
         // Set the balance.
-        balanceOf[_projectId] = balanceOf[_projectId] + msg.value;
+        balanceOf[_projectId] = balanceOf[_projectId] + _amount;
     }
 
-    function prepToReceiveBalanceFor(uint256 _projectId) external override {
-        // Set the processed ticket tracker if this isnt the current terminal for the project.
-        require(terminalDirectory.terminalOf(_projectId) != this, "TODO BAD");
-        // Set the tracker to be the new total supply.
+    /**
+      @notice
+      Sets up any peice of internal state necessary for the specified project to migrate to this terminal.
+
+      @dev
+      This must be called before this contract is the current terminal for the project.
+
+      @dev
+      This function can be called many times, but must be called in the same transaction that migrates a project to this terminal.
+
+      @param _projectId The ID of the project that is being migrated to this terminal.
+    */
+    function prepForMigrationOf(uint256 _projectId) external override {
+        // This function can only be called if this contract isn't already the project's current terminal.
+        require(
+            terminalDirectory.terminalOf(_projectId) != this,
+            "TV2DL::PFM: NOT_ALLOWED"
+        );
+        // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
         _processedTokenTrackerOf[_projectId] = int256(
             ticketBooth.totalSupplyOf(_projectId)
         );
@@ -961,58 +1058,41 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Adds to the contract addresses that projects can migrate their Tickets to.
+      Adds a Terminal address to the allow list that project owners can migrate its funds and treasury operations to.
 
       @dev
-      Only the owner can add a contract to the migration allow list.
+      Only this contract's owner can add a contract to the migration allow list.
 
-      @param _contract The contract to allow.
+      @param _terminal The terminal contract to allow.
     */
-    function allowMigration(ITerminal _contract) external override onlyOwner {
-        // Can't allow the zero address.
-        require(
-            _contract != ITerminal(address(0)),
-            "TerminalV2::allowMigration: ZERO_ADDRESS"
-        );
-
+    function allowMigration(ITerminal _terminal) external override onlyOwner {
         // Toggle the contract as allowed.
-        migrationIsAllowed[_contract] = !migrationIsAllowed[_contract];
+        migrationIsAllowed[_terminal] = !migrationIsAllowed[_terminal];
 
-        emit AllowMigration(_contract);
+        emit AllowMigration(_terminal);
     }
 
+    /**
+      @notice
+      Sets the contract that is operating as this contract's payment layer.
+
+      @dev
+      Only this contract's owner can set this contract's payment layer.
+
+      @param _paymentLayer The payment layer contract to set.
+    */
     function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer)
         external
         override
         onlyOwner
     {
+        // Set the contract.
         paymentLayer = _paymentLayer;
+
         emit SetPaymentLayer(_paymentLayer, msg.sender);
     }
 
-    /**
-      @notice
-      Mints all reserved tokens for a project.
-
-      @param _projectId The ID of the project to which the reserved tokens belong.
-
-      @return amount The amount of tokens that are being printed.
-    */
-    function mintReservedTokens(uint256 _projectId, string memory _memo)
-        external
-        override
-        nonReentrant
-        returns (uint256 amount)
-    {
-        return _mintReservedTokens(_projectId, _memo);
-    }
-
     // --- private helper functions --- //
-
-    /**
-      @notice
-      See the documentation for 'pay'.
-    */
 
     /**
       @notice
@@ -1025,26 +1105,26 @@ contract TerminalV2DataLayer is
     function _validateAndPackFundingCycleMetadata(
         FundingCycleMetadataV2 memory _metadata
     ) private pure returns (uint256 packed) {
-        // The reserved project ticket rate must be less than or equal to 200.
+        // The reserved project token rate must be less than or equal to 200.
         require(
             _metadata.reservedRate <= 200,
-            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_RESERVED_RATE"
+            "TV2DL::VPFCM: BAD_RESERVED_RATE"
         );
 
         // The redemption rate must be between 0 and 200.
         require(
             _metadata.redemptionRate <= 200,
-            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_REDEMPTION_RATE"
+            "TV2DL::VPFCM: BAD_REDEMPTION_RATE"
         );
 
         // The ballot redemption rate must be less than or equal to 200.
         require(
             _metadata.ballotRedemptionRate <= 200,
-            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_BALLOT_REDEMPTION_RATE"
+            "TV2DL::VPFCM: BAD_BALLOT_REDEMPTION_RATE"
         );
 
-        // version 0 in the first 8 bytes.
-        packed = 0;
+        // version 1 in the first 8 bytes.
+        packed = 1;
         // reserved rate in bits 8-15.
         packed |= _metadata.reservedRate << 8;
         // bonding curve in bits 16-23.
@@ -1066,56 +1146,59 @@ contract TerminalV2DataLayer is
     }
 
     /**
-      @notice See docs for `printReservedTokens`
+      @notice 
+      See docs for `distributeReservedTokens`
     */
-    function _mintReservedTokens(uint256 _projectId, string memory _memo)
+    function _distributeReservedTokens(uint256 _projectId, string memory _memo)
         private
-        returns (uint256 amount)
+        returns (uint256 count)
     {
         // Get the current funding cycle to read the reserved rate from.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
 
-        // If there's no funding cycle, there's no reserved tickets to print.
+        // There aren't any reserved tokens to mint and distribute if there is no funding cycle.
         if (_fundingCycle.number == 0) return 0;
 
-        // Get a reference to new total supply of tickets before printing reserved tickets.
+        // Get a reference to new total supply of tokens before minting reserved tokens.
         uint256 _totalTokens = ticketBooth.totalSupplyOf(_projectId);
 
-        // Get a reference to the number of tickets that need to be printed.
-        // If there's no funding cycle, there's no tickets to print.
-        // The reserved rate is in bits 8-15 of the metadata.
-        amount = _reservedTokenAmountFrom(
+        // Get a reference to the number of tokens that need to be minted.
+        count = _reservedTokenAmountFrom(
             _processedTokenTrackerOf[_projectId],
             _fundingCycle.reservedRate(),
             _totalTokens
         );
 
         // Set the tracker to be the new total supply.
-        _processedTokenTrackerOf[_projectId] = int256(_totalTokens + amount);
+        _processedTokenTrackerOf[_projectId] = int256(_totalTokens + count);
 
         // Get a reference to the project owner.
         address _owner = projects.ownerOf(_projectId);
 
-        // Distribute tickets to mods and get a reference to the leftover amount to print after all mods have had their share printed.
-        uint256 _leftoverTicketAmount = amount == 0
+        // Distribute tokens to split modules and get a reference to the leftover amount to mint after all mods have gotten their share.
+        uint256 _leftoverTokenCount = count == 0
             ? 0
-            : _distributeToTicketMods(_fundingCycle, amount);
+            : _distributeToTokenMods(_fundingCycle, count);
 
-        // Print if there is something to print.
-        if (_leftoverTicketAmount > 0)
-            ticketBooth.print(_owner, _projectId, _leftoverTicketAmount, false);
+        // Mint any leftover tokens to the project owner.
+        if (_leftoverTokenCount > 0)
+            ticketBooth.print(_owner, _projectId, _leftoverTokenCount, false);
 
-        emit PrintReserveTokens(
+        emit DistributeReservedTokens(
             _fundingCycle.number,
             _projectId,
             _owner,
-            amount,
-            _leftoverTicketAmount,
+            count,
+            _leftoverTokenCount,
             _memo,
             msg.sender
         );
     }
 
+    /**
+      @notice
+      See docs for `claimableOverflowOf`
+     */
     function _claimableOverflowOf(
         FundingCycle memory _fundingCycle,
         uint256 _tokenCount
@@ -1126,19 +1209,19 @@ contract TerminalV2DataLayer is
         // If there is no overflow, nothing is claimable.
         if (_currentOverflow == 0) return 0;
 
-        // Get the total number of tickets in circulation.
+        // Get the total number of tokens in circulation.
         uint256 _totalSupply = ticketBooth.totalSupplyOf(
             _fundingCycle.projectId
         );
 
-        // Get the number of reserved tickets the project has.
+        // Get the number of reserved tokens the project has.
         uint256 _reservedTokenAmount = _reservedTokenAmountFrom(
             _processedTokenTrackerOf[_fundingCycle.projectId],
             _fundingCycle.reservedRate(),
             _totalSupply
         );
 
-        // If there are reserved tickets, add them to the total supply.
+        // If there are reserved tokens, add them to the total supply.
         if (_reservedTokenAmount > 0)
             _totalSupply = _totalSupply + _reservedTokenAmount;
 
@@ -1177,59 +1260,58 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Gets the amount overflowed in relation to the provided funding cycle.
+      Gets the amount that is overflowing if measured from the specified funding cycle.
 
       @dev
-      This amount changes as the price of ETH changes against the funding cycle's currency.
+      This amount changes as the price of ETH changes in relation to the funding cycle's currency.
 
-      @param _currentFundingCycle The ID of the funding cycle to base the overflow on.
+      @param _fundingCycle The ID of the funding cycle to base the overflow on.
 
-      @return overflow The current overflow of funds.
+      @return overflow The overflow of funds.
     */
-    function _overflowFrom(FundingCycle memory _currentFundingCycle)
+    function _overflowFrom(FundingCycle memory _fundingCycle)
         private
         view
         returns (uint256)
     {
         // Get the current balance of the project.
-        uint256 _balanceOf = balanceOf[_currentFundingCycle.projectId];
+        uint256 _balanceOf = balanceOf[_fundingCycle.projectId];
 
+        // If there's no balance, there's no overflow.
         if (_balanceOf == 0) return 0;
 
-        // Get a reference to the amount still tappable in the current funding cycle.
-        uint256 _limit = _currentFundingCycle.target -
-            _currentFundingCycle.tapped;
+        // Get a reference to the amount still withdrawable during the funding cycle.
+        uint256 _limit = _fundingCycle.target - _fundingCycle.tapped;
 
-        // The amount of ETH that the owner could currently still tap if its available. This amount isn't considered overflow.
+        // Convert the limit to ETH.
         uint256 _ethLimit = _limit == 0
             ? 0 // Get the current price of ETH.
             : PRBMathUD60x18.div(
                 _limit,
-                prices.getETHPriceFor(_currentFundingCycle.currency)
+                prices.getETHPriceFor(_fundingCycle.currency)
             );
 
-        // Overflow is the balance of this project minus the reserved amount.
+        // Overflow is the balance of this project minus the amount that can still be withdrawn.
         return _balanceOf < _ethLimit ? 0 : _balanceOf - _ethLimit;
     }
 
     /**
       @notice
-      distributed tickets to the mods for the specified funding cycle.
+      Distributed tokens to the split modules according to the specified funding cycle configuration.
 
-      @param _fundingCycle The funding cycle to base the ticket distribution on.
-      @param _amount The total amount of tickets to print.
+      @param _fundingCycle The funding cycle to base the token distribution on.
+      @param _amount The total amount of tokens to mint.
 
-      @return leftoverAmount If the mod percents dont add up to 100%, the leftover amount is returned.
-
+      @return leftoverAmount If the split module percents dont add up to 100%, the leftover amount is returned.
     */
-    function _distributeToTicketMods(
+    function _distributeToTokenMods(
         FundingCycle memory _fundingCycle,
         uint256 _amount
     ) private returns (uint256 leftoverAmount) {
         // Set the leftover amount to the initial amount.
         leftoverAmount = _amount;
 
-        // Get a reference to the project's ticket mods.
+        // Get a reference to the project's token modules.
         TicketMod[] memory _mods = modStore.ticketModsOf(
             _fundingCycle.projectId,
             _fundingCycle.configured
@@ -1241,42 +1323,51 @@ contract TerminalV2DataLayer is
             TicketMod memory _mod = _mods[_i];
 
             // The amount to send towards mods. Mods percents are out of 10000.
-            uint256 _modCut = PRBMath.mulDiv(_amount, _mod.percent, 10000);
+            uint256 _tokenCount = PRBMath.mulDiv(_amount, _mod.percent, 10000);
 
-            // Print tickets for the mod if needed.
-            if (_modCut > 0)
+            // Mints tokens for the module if needed.
+            if (_tokenCount > 0)
                 ticketBooth.print(
                     _mod.beneficiary,
                     _fundingCycle.projectId,
-                    _modCut,
+                    _tokenCount,
                     _mod.preferUnstaked
                 );
 
             // Subtract from the amount to be sent to the beneficiary.
-            leftoverAmount = leftoverAmount - _modCut;
+            leftoverAmount = leftoverAmount - _tokenCount;
 
-            emit DistributeToTicketMod(
+            emit DistributeToTokenMod(
                 _fundingCycle.number,
                 _fundingCycle.id,
                 _fundingCycle.projectId,
                 _mod,
-                _modCut,
+                _tokenCount,
                 msg.sender
             );
         }
     }
 
+    /** 
+      @notice
+      Subtracts the provided value from the processed token tracker.
+
+      @dev
+      Necessary to account for both positive and negative values.
+
+      @param _projectId The ID of the project that is having its tracker subtracted from.
+      @param _amount The amount to subtract.
+
+    */
     function _subtractFromTokenTracker(uint256 _projectId, uint256 _amount)
         private
     {
-        // Get a reference to the processed ticket tracker for the project.
+        // Get a reference to the processed token tracker for the project.
         int256 _processedTokenTracker = _processedTokenTrackerOf[_projectId];
 
-        // Subtract the count from the processed ticket tracker.
-        // Subtract from processed tickets so that the difference between whats been processed and the
-        // total supply remains the same.
-        // If there are at least as many processed tickets as there are tickets being redeemed,
-        // the processed ticket tracker of the project will be positive. Otherwise it will be negative.
+        // Subtract the count from the processed token tracker.
+        // If there are at least as many processed tokens as the specified amount,
+        // the processed token tracker of the project will be positive. Otherwise it will be negative.
         _processedTokenTrackerOf[_projectId] = _processedTokenTracker < 0 // If the tracker is negative, add the count and reverse it.
             ? -int256(uint256(-_processedTokenTracker) + _amount) // the tracker is less than the count, subtract it from the count and reverse it.
             : _processedTokenTracker < int256(_amount)
@@ -1284,6 +1375,15 @@ contract TerminalV2DataLayer is
             : _processedTokenTracker - int256(_amount);
     }
 
+    /** 
+      @notice
+      Sets the overflow allowance for a particular project's configuration.
+
+      @param _amount The amount to set as the allowance.
+      @param _projectId The ID of the project to set an allowance for.
+      @param _configuration The configuration to set an allowance for.
+
+    */
     function _setOverflowAllowance(
         uint256 _amount,
         uint256 _projectId,
@@ -1301,35 +1401,35 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Gets the amount of reserved tickets currently tracked for a project given a reserved rate.
+      Gets the amount of reserved tokens currently tracked for a project given a reserved rate.
 
       @param _processedTokenTracker The tracker to make the calculation with.
       @param _reservedRate The reserved rate to use to make the calculation.
-      @param _totalEligibleTickets The total amount to make the calculation with.
+      @param _totalEligibleTokens The total amount to make the calculation with.
 
-      @return amount reserved ticket amount.
+      @return amount reserved token amount.
     */
     function _reservedTokenAmountFrom(
         int256 _processedTokenTracker,
         uint256 _reservedRate,
-        uint256 _totalEligibleTickets
+        uint256 _totalEligibleTokens
     ) private pure returns (uint256) {
-        // Get a reference to the amount of tickets that are unprocessed.
-        uint256 _unprocessedTicketBalanceOf = _processedTokenTracker >= 0 // preconfigure tickets shouldn't contribute to the reserved ticket amount.
-            ? _totalEligibleTickets - uint256(_processedTokenTracker)
-            : _totalEligibleTickets + uint256(-_processedTokenTracker);
+        // Get a reference to the amount of tokens that are unprocessed.
+        uint256 _unprocessedTokenBalanceOf = _processedTokenTracker >= 0 // preconfigure tokens shouldn't contribute to the reserved token amount.
+            ? _totalEligibleTokens - uint256(_processedTokenTracker)
+            : _totalEligibleTokens + uint256(-_processedTokenTracker);
 
-        // If there are no unprocessed tickets, return.
-        if (_unprocessedTicketBalanceOf == 0) return 0;
+        // If there are no unprocessed tokens, return.
+        if (_unprocessedTokenBalanceOf == 0) return 0;
 
-        // If all tickets are reserved, return the full unprocessed amount.
-        if (_reservedRate == 200) return _unprocessedTicketBalanceOf;
+        // If all tokens are reserved, return the full unprocessed amount.
+        if (_reservedRate == 200) return _unprocessedTokenBalanceOf;
 
         return
             PRBMath.mulDiv(
-                _unprocessedTicketBalanceOf,
+                _unprocessedTokenBalanceOf,
                 200,
                 200 - _reservedRate
-            ) - _unprocessedTicketBalanceOf;
+            ) - _unprocessedTokenBalanceOf;
     }
 }
