@@ -5,11 +5,10 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./IProjects.sol";
 import "./IModStore.sol";
-// import "./IOperatorStore.sol";
 import "./ITerminalDirectory.sol";
-import "./ITerminalV2Store.sol";
+import "./ITerminalV2DataLayer.sol";
 
-interface ITerminalV2 {
+interface ITerminalV2PaymentLayer {
     event Pay(
         uint256 indexed fundingCycleNumber,
         uint256 indexed projectId,
@@ -45,11 +44,19 @@ interface ITerminalV2 {
         address caller
     );
 
+    event UseAllowance(
+        uint256 indexed projectId,
+        uint256 indexed configuration,
+        uint256 amount,
+        address beneficiary,
+        address caller
+    );
+
     event Redeem(
         address indexed holder,
         uint256 indexed projectId,
         address beneficiary,
-        uint256 count,
+        uint256 tokenCount,
         uint256 claimedAmount,
         string memo,
         address caller
@@ -68,7 +75,7 @@ interface ITerminalV2 {
 
     function terminalDirectory() external view returns (ITerminalDirectory);
 
-    function terminalV2Store() external view returns (ITerminalV2Store);
+    function dataLayer() external view returns (ITerminalV2DataLayer);
 
     function distributePayouts(
         uint256 _projectId,
@@ -95,6 +102,12 @@ interface ITerminalV2 {
         string calldata _memo,
         bool _preferUnstakedTickets
     ) external payable returns (uint256 fundingCycleNumber);
+
+    function useAllowance(
+        uint256 _projectId,
+        uint256 _amount,
+        address payable _beneficiary
+    ) external;
 
     function migrate(uint256 _projectId, ITerminal _to) external;
 

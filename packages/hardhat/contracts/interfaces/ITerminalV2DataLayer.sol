@@ -5,12 +5,13 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./ITicketBooth.sol";
 import "./IFundingCycles.sol";
-import "./ITerminalDataSource.sol";
+import "./IFundingCycleDataSource.sol";
 import "./IYielder.sol";
 import "./IProjects.sol";
 import "./IModStore.sol";
 import "./ITerminal.sol";
 import "./IOperatorStore.sol";
+import "./ITerminalV2PaymentLayer.sol";
 
 struct FundingCycleMetadataV2 {
     uint256 reservedRate;
@@ -22,10 +23,16 @@ struct FundingCycleMetadataV2 {
     bool pausePrintReserves;
     bool useDataSourceForPay;
     bool useDataSourceForRedeem;
-    ITerminalDataSource dataSource;
+    IFundingCycleDataSource dataSource;
 }
 
-interface ITerminalV2Store {
+interface ITerminalV2DataLayer {
+    event SetOverflowAllowance(
+        uint256 indexed projectId,
+        uint256 indexed configuration,
+        uint256 amount,
+        address caller
+    );
     event PrintReserveTokens(
         uint256 indexed fundingCycleNumber,
         uint256 indexed projectId,
@@ -58,6 +65,16 @@ interface ITerminalV2Store {
 
     event AllowMigration(ITerminal terminal);
 
+    event Burn(
+        address indexed holder,
+        uint256 indexed projectId,
+        uint256 count,
+        string memo,
+        address caller
+    );
+
+    event SetPaymentLayer(ITerminalV2PaymentLayer paymentLayer, address caller);
+
     function fundingCycles() external view returns (IFundingCycles);
 
     function ticketBooth() external view returns (ITicketBooth);
@@ -68,9 +85,16 @@ interface ITerminalV2Store {
 
     function projects() external view returns (IProjects);
 
+    function paymentLayer() external view returns (ITerminalV2PaymentLayer);
+
     function balanceOf(uint256 _projectId) external view returns (uint256);
 
-    function fee() external view returns (uint256);
+    // function fee() external view returns (uint256);
+
+    function overflowAllowanceOf(uint256 _projectId, uint256 _configuration)
+        external
+        view
+        returns (uint256);
 
     function canPrintPreminedTokens(uint256 _projectId)
         external
@@ -108,6 +132,7 @@ interface ITerminalV2Store {
         string calldata _uri,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
+        uint256 _overflowAllowance,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external;
@@ -116,6 +141,7 @@ interface ITerminalV2Store {
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
+        uint256 _overflowAllowance,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external returns (uint256);
@@ -147,6 +173,14 @@ interface ITerminalV2Store {
             string memory _delegatedMemo
         );
 
+    function burn(
+        address _holder,
+        uint256 _projectId,
+        uint256 _tokenCount,
+        string calldata _memo,
+        bool _preferUnstaked
+    ) external;
+
     function pay(
         address payer,
         uint256 _amount,
@@ -164,9 +198,15 @@ interface ITerminalV2Store {
             string memory delegatedMemo
         );
 
+    function useAllowance(uint256 _projectId, uint256 _amount)
+        external
+        returns (FundingCycle memory fundingCycle);
+
     function mintReservedTokens(uint256 _projectId, string memory _memo)
         external
         returns (uint256 amount);
 
     function migrate(uint256 _projectId, ITerminal _to) external payable;
+
+    function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer) external;
 }

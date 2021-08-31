@@ -7,17 +7,15 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@paulrberg/contracts/math/PRBMath.sol";
 import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 
-import "./interfaces/ITerminalV2.sol";
-import "./interfaces/IGovernable.sol";
+import "./interfaces/ITerminalV2PaymentLayer.sol";
 
 import "./abstract/JuiceboxProject.sol";
 import "./abstract/Operatable.sol";
-import "./abstract/Governable.sol";
 
 import "./libraries/Operations.sol";
 import "./libraries/Operations2.sol";
 
-import "./interfaces/ITerminalV2Store.sol";
+import "./interfaces/ITerminalV2DataLayer.sol";
 
 /**
   @notice 
@@ -26,8 +24,11 @@ import "./interfaces/ITerminalV2Store.sol";
   @dev 
   A project can transfer its funds, along with the power to reconfigure and mint/burn their Tickets, from this contract to another allowed terminal contract at any time.
 */
-contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
-    // ITerminal,
+contract TerminalV2PaymentLayer is
+    ITerminalV2PaymentLayer,
+    Operatable,
+    ReentrancyGuard
+{
     // --- public immutable stored properties --- //
 
     /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
@@ -40,7 +41,7 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
     ITerminalDirectory public immutable override terminalDirectory;
 
     /// @notice The storage contract for this terminal.
-    ITerminalV2Store public immutable override terminalV2Store;
+    ITerminalV2DataLayer public immutable override dataLayer;
 
     // --- external transactions --- //
 
@@ -55,21 +56,20 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
         IOperatorStore _operatorStore,
         IModStore _modStore,
         ITerminalDirectory _terminalDirectory,
-        ITerminalV2Store _terminalV2Store,
-        address _governance
-    ) Operatable(_operatorStore) Governable(_governance) {
+        ITerminalV2DataLayer _dataLayer
+    ) Operatable(_operatorStore) {
         require(
             _projects != IProjects(address(0)) &&
                 _operatorStore != IOperatorStore(address(0)) &&
                 _modStore != IModStore(address(0)) &&
                 _terminalDirectory != ITerminalDirectory(address(0)) &&
-                _terminalV2Store != ITerminalV2Store(address(0)),
+                _dataLayer != ITerminalV2DataLayer(address(0)),
             "TerminalV2: ZERO_ADDRESS"
         );
         projects = _projects;
         modStore = _modStore;
         terminalDirectory = _terminalDirectory;
-        terminalV2Store = _terminalV2Store;
+        dataLayer = _dataLayer;
     }
 
     /**
@@ -132,12 +132,7 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
         (
             FundingCycle memory _fundingCycle,
             uint256 _tappedWeiAmount
-        ) = terminalV2Store.tap(
-                _projectId,
-                _amount,
-                _currency,
-                _minReturnedWei
-            );
+        ) = dataLayer.tap(_projectId, _amount, _currency, _minReturnedWei);
 
         // Get a reference to the project owner, which will receive the admin's tickets from paying the fee,
         // and receive any extra tapped funds not allocated to mods.
@@ -186,6 +181,43 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
         return _fundingCycle.id;
     }
 
+    /** 
+      @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
+      @param _projectId The ID of the project to use the allowance of.
+      @param _amount The amount of the allowance to use.
+      @param _beneficiary The address to send the funds.
+    */
+    function useAllowance(
+        uint256 _projectId,
+        uint256 _amount,
+        address payable _beneficiary
+    )
+        external
+        override
+        nonReentrant
+        requirePermission(
+            projects.ownerOf(_projectId),
+            _projectId,
+            Operations2.UseAllowance
+        )
+    {
+        FundingCycle memory _fundingCycle = dataLayer.useAllowance(
+            _projectId,
+            _amount
+        );
+
+        // Otherwise, send the funds directly to the beneficiary.
+        Address.sendValue(_beneficiary, _amount);
+
+        emit UseAllowance(
+            _projectId,
+            _fundingCycle.configured,
+            _amount,
+            _beneficiary,
+            msg.sender
+        );
+    }
+
     // /**
     //   @notice
     //   Addresses can redeem their Tokens to claim the project's overflowed ETH.
@@ -225,7 +257,7 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
         FundingCycle memory _fundingCycle;
         uint256 _claimAmount;
 
-        (_fundingCycle, _claimAmount, _memo) = terminalV2Store.redeem(
+        (_fundingCycle, _claimAmount, _memo) = dataLayer.redeem(
             _holder,
             _projectId,
             _tokenCount,
@@ -279,8 +311,8 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
             Operations.Migrate
         )
     {
-        uint256 _balance = terminalV2Store.balanceOf(_projectId);
-        terminalV2Store.migrate{value: _balance}(_projectId, _to);
+        uint256 _balance = dataLayer.balanceOf(_projectId);
+        dataLayer.migrate{value: _balance}(_projectId, _to);
         emit Migrate(_projectId, _to, _balance, msg.sender);
     }
 
@@ -291,22 +323,9 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
       @param _projectId The ID of the project to which the funds received belong.
     */
     function addToBalance(uint256 _projectId) external payable override {
-        terminalV2Store.addToBalance(msg.value, _projectId);
+        dataLayer.addToBalance(msg.value, _projectId);
         emit AddToBalance(_projectId, msg.value, msg.sender);
     }
-
-    // /**
-    //   @notice
-    //   Adds to the contract addresses that projects can migrate their Tickets to.
-
-    //   @dev
-    //   Only governance can add a contract to the migration allow list.
-
-    //   @param _contract The contract to allow.
-    // */
-    // function allowMigration(ITerminal _contract) external override onlyGov {}
-
-    // --- public transactions --- //
 
     // --- private helper functions --- //
 
@@ -373,7 +392,7 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
 
                     // Save gas if this contract is being used as the terminal.
                     //TODO remove addresses
-                    if (address(_terminal) == address(terminalV2Store)) {
+                    if (address(_terminal) == address(dataLayer)) {
                         _pay(
                             _modCut,
                             _mod.projectId,
@@ -437,7 +456,7 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
 
         // When processing the admin fee, save gas if the admin is using this contract as its terminal.
         //TODO remove addresses
-        address(_terminal) == address(terminalV2Store) // Use the local pay call.
+        address(_terminal) == address(dataLayer) // Use the local pay call.
             ? _pay(feeAmount, 1, _beneficiary, 0, _memo, false) // Use the external pay call of the correct terminal.
             : _terminal.pay{value: feeAmount}(1, _beneficiary, _memo, false);
     }
@@ -464,7 +483,7 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
         uint256 _weight;
         uint256 _tokenCount;
 
-        (_fundingCycle, _weight, _tokenCount, _memo) = terminalV2Store.pay(
+        (_fundingCycle, _weight, _tokenCount, _memo) = dataLayer.pay(
             msg.sender,
             _amount,
             _projectId,

@@ -8,11 +8,10 @@ import "@paulrberg/contracts/math/PRBMath.sol";
 import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 
 import "./interfaces/IGovernable.sol";
-import "./interfaces/ITerminalV2.sol";
+import "./interfaces/ITerminalV2DataLayer.sol";
 
 import "./abstract/JuiceboxProject.sol";
 import "./abstract/Operatable.sol";
-import "./abstract/Governable.sol";
 
 import "./libraries/Operations.sol";
 import "./libraries/Operations2.sol";
@@ -25,16 +24,23 @@ import "./libraries/FundingCycleMetadataResolver.sol";
   @dev 
   A project can transfer its funds, along with the power to reconfigure and mint/burn their Tickets, from this contract to another allowed terminal contract at any time.
 */
-contract TerminalV2Store is
-    ITerminalV2Store,
+contract TerminalV2DataLayer is
+    ITerminalV2DataLayer,
     ITerminal,
     Ownable,
-    Governable,
     Operatable,
     ReentrancyGuard
 {
     using FundingCycleMetadataResolver for FundingCycle;
 
+    // Modifier to only allow the payment layer to call the function.
+    modifier onlyPaymentLayer() {
+        require(
+            msg.sender == address(paymentLayer),
+            "TerminalV2: UNAUTHORIZED"
+        );
+        _;
+    }
     // --- private stored properties --- //
 
     // The difference between the processed ticket tracker of a project and the project's ticket's total supply is the amount of tickets that
@@ -69,11 +75,16 @@ contract TerminalV2Store is
     /// @notice The amount of ETH that each project is responsible for.
     mapping(uint256 => uint256) public override balanceOf;
 
-    /// @notice The percent fee the Juicebox project takes from tapped amounts. Out of 200.
-    uint256 public override fee = 10;
-
     // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
     mapping(ITerminal => bool) public override migrationIsAllowed;
+
+    // The amount of overflow that a project is allowed to tap into on-demand.
+    mapping(uint256 => mapping(uint256 => uint256))
+        public
+        override overflowAllowanceOf;
+
+    /// @notice The percent fee the Juicebox project takes from tapped amounts. Out of 200.
+    ITerminalV2PaymentLayer public override paymentLayer;
 
     // --- external views --- //
 
@@ -192,19 +203,17 @@ contract TerminalV2Store is
         IOperatorStore _operatorStore,
         IModStore _modStore,
         IPrices _prices,
-        ITerminalDirectory _terminalDirectory,
-        address _governance
-    ) Operatable(_operatorStore) Governable(_governance) {
-        // require(
-        //     _projects != IProjects(address(0)) &&
-        //         _fundingCycles != IFundingCycles(address(0)) &&
-        //         _ticketBooth != ITicketBooth(address(0)) &&
-        //         _operatorStore != IOperatorStore(address(0)) &&
-        //         _modStore != IModStore(address(0)) &&
-        //         _prices != IPrices(address(0)) &&
-        //         _terminalDirectory != ITerminalDirectory(address(0)),
-        //     "TerminalV2: ZERO_ADDRESS"
-        // );
+        ITerminalDirectory _terminalDirectory
+    ) Operatable(_operatorStore) {
+        require(
+            _projects != IProjects(address(0)) &&
+                _fundingCycles != IFundingCycles(address(0)) &&
+                _ticketBooth != ITicketBooth(address(0)) &&
+                _modStore != IModStore(address(0)) &&
+                _prices != IPrices(address(0)) &&
+                _terminalDirectory != ITerminalDirectory(address(0)),
+            "TerminalV2: ZERO_ADDRESS"
+        );
         projects = _projects;
         fundingCycles = _fundingCycles;
         ticketBooth = _ticketBooth;
@@ -251,6 +260,7 @@ contract TerminalV2Store is
         string calldata _uri,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
+        uint256 _overflowAllowance,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     ) external override {
@@ -267,7 +277,7 @@ contract TerminalV2Store is
             _projectId,
             _properties,
             _packedMetadata,
-            fee,
+            10, // Fee fixed at 10
             true
         );
 
@@ -285,6 +295,16 @@ contract TerminalV2Store is
                 _projectId,
                 _fundingCycle.configured,
                 _ticketMods
+            );
+
+        if (
+            _overflowAllowance !=
+            overflowAllowanceOf[_projectId][_fundingCycle.configured]
+        )
+            _setOverflowAllowance(
+                _projectId,
+                _fundingCycle.configured,
+                _overflowAllowance
             );
     }
 
@@ -323,6 +343,7 @@ contract TerminalV2Store is
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
+        uint256 _overflowAllowance,
         PayoutMod[] memory _payoutMods,
         TicketMod[] memory _ticketMods
     )
@@ -355,7 +376,7 @@ contract TerminalV2Store is
             _projectId,
             _properties,
             _packedMetadata,
-            fee,
+            10, // fee fixed at 10
             _shouldConfigureActive
         );
 
@@ -373,6 +394,16 @@ contract TerminalV2Store is
                 _projectId,
                 _fundingCycle.configured,
                 _ticketMods
+            );
+
+        if (
+            _overflowAllowance !=
+            overflowAllowanceOf[_projectId][_fundingCycle.configured]
+        )
+            _setOverflowAllowance(
+                _projectId,
+                _fundingCycle.configured,
+                _overflowAllowance
             );
 
         return _fundingCycle.id;
@@ -436,16 +467,6 @@ contract TerminalV2Store is
             "TerminalV2::printPreminedTickets: ALREADY_ACTIVE"
         );
 
-        // Set the preconfigure tokens as processed so that reserved tokens cant be minted against them.
-        // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-        require(
-            _processedTokenTrackerOf[_projectId] < 0 ||
-                uint256(_processedTokenTrackerOf[_projectId]) +
-                    uint256(_weightedAmount) <=
-                uint256(type(int256).max),
-            "TerminalV1::printPreminedTickets: INT_LIMIT_REACHED"
-        );
-
         // Set the preconfigure tickets as processed so that reserved tickets cant be minted against them.
         _processedTokenTrackerOf[_projectId] =
             _processedTokenTrackerOf[_projectId] +
@@ -504,7 +525,7 @@ contract TerminalV2Store is
         // This contract should not keep any ETH. It should relay it all
         // to the TerminalVault that owns this terminal.
         return
-            ITerminalV2(owner()).pay{value: msg.value}(
+            ITerminalV2PaymentLayer(owner()).pay{value: msg.value}(
                 _projectId,
                 _beneficiary,
                 0,
@@ -543,7 +564,7 @@ contract TerminalV2Store is
     )
         public
         override
-        onlyOwner
+        onlyPaymentLayer
         returns (
             FundingCycle memory fundingCycle,
             uint256 weight,
@@ -563,7 +584,7 @@ contract TerminalV2Store is
 
         // The bit that signals whether or not the data source should be used is it bit 37 of the funding cycle's metadata.
         if (fundingCycle.useDataSourceForPay()) {
-            (weight, memo, _delegate) = ITerminalDataSource(
+            (weight, memo, _delegate) = IFundingCycleDataSource(
                 fundingCycle.dataSource()
             ).payData(fundingCycle, _payer, _amount, _beneficiary, _memo);
         } else {
@@ -601,18 +622,6 @@ contract TerminalV2Store is
                     _preferUnstakedTokens
                 );
             } else if (_weightedAmount > 0) {
-                // If there is no unreserved weight amount but there is a weighted amount,
-                // the full weighted amount should be explicitly tracked as reserved since no unreserved tickets were printed.
-                // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
-                // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-                require(
-                    _processedTokenTrackerOf[_projectId] > 0 ||
-                        uint256(-_processedTokenTrackerOf[_projectId]) +
-                            uint256(_weightedAmount) <=
-                        uint256(type(int256).max),
-                    "TerminalV2::_pay: INT_LIMIT_REACHED"
-                );
-
                 // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
                 _processedTokenTrackerOf[_projectId] =
                     _processedTokenTrackerOf[_projectId] -
@@ -654,7 +663,7 @@ contract TerminalV2Store is
     )
         external
         override
-        onlyOwner
+        onlyPaymentLayer
         returns (FundingCycle memory fundingCycle, uint256 tappedWeiAmount)
     {
         // Register the funds as tapped. Get the ID of the funding cycle that was tapped.
@@ -664,7 +673,7 @@ contract TerminalV2Store is
         require(fundingCycle.id > 0, "TerminalV2::tap: NOT_FOUND");
 
         // Must not be paused.
-        require(fundingCycle.tapPaused(), "TerminalV2::tap: PAUSED");
+        require(!fundingCycle.tapPaused(), "TerminalV2::tap: PAUSED");
 
         // Make sure the currency's match.
         require(
@@ -694,6 +703,39 @@ contract TerminalV2Store is
         balanceOf[_projectId] = balanceOf[_projectId] - tappedWeiAmount;
     }
 
+    /** 
+      @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
+      @param _projectId The ID of the project to use the allowance of.
+      @param _amount The amount of the allowance to use.
+    */
+    function useAllowance(uint256 _projectId, uint256 _amount)
+        external
+        override
+        onlyPaymentLayer
+        returns (FundingCycle memory fundingCycle)
+    {
+        // Get a reference to the project's current funding cycle.
+        fundingCycle = fundingCycles.currentOf(_projectId);
+
+        require(
+            _amount <= balanceOf[_projectId],
+            "TerminalV2::tapAllowance: INSUFFICIENT_FUNDS"
+        );
+
+        // There must be sufficient allowance available.
+        require(
+            _amount <= overflowAllowanceOf[_projectId][fundingCycle.configured],
+            "TerminalV2DataLayer::decrementAllowance: NOT_ALLOWED"
+        );
+
+        // Store the decremented value.
+        overflowAllowanceOf[_projectId][fundingCycle.configured] =
+            overflowAllowanceOf[_projectId][fundingCycle.configured] -
+            _amount;
+
+        balanceOf[_projectId] = balanceOf[_projectId] - _amount;
+    }
+
     // /**
     //   @notice
     //   Addresses can redeem their Tickets to claim the project's overflowed ETH.
@@ -720,7 +762,7 @@ contract TerminalV2Store is
     )
         external
         override
-        onlyOwner
+        onlyPaymentLayer
         returns (
             FundingCycle memory fundingCycle,
             uint256 claimAmount,
@@ -743,7 +785,7 @@ contract TerminalV2Store is
 
         // The bit that signals whether or not the delegate should be used is it bit 36 of the funding cycle's metadata.
         if (fundingCycle.useDataSourceForRedeem()) {
-            (claimAmount, memo, _delegate) = ITerminalDataSource(
+            (claimAmount, memo, _delegate) = IFundingCycleDataSource(
                 fundingCycle.dataSource()
             ).redeemData(
                     fundingCycle,
@@ -770,22 +812,7 @@ contract TerminalV2Store is
 
         // Redeem the tickets, which burns them.
         if (_tokenCount > 0) {
-            // Get a reference to the processed ticket tracker for the project.
-            int256 _processedTicketTracker = _processedTokenTrackerOf[
-                _projectId
-            ];
-
-            // Subtract the count from the processed ticket tracker.
-            // Subtract from processed tickets so that the difference between whats been processed and the
-            // total supply remains the same.
-            // If there are at least as many processed tickets as there are tickets being redeemed,
-            // the processed ticket tracker of the project will be positive. Otherwise it will be negative.
-            _processedTokenTrackerOf[_projectId] = _processedTicketTracker < 0 // If the tracker is negative, add the count and reverse it.
-                ? -int256(uint256(-_processedTicketTracker) + _tokenCount) // the tracker is less than the count, subtract it from the count and reverse it.
-                : _processedTicketTracker < int256(_tokenCount)
-                ? -(int256(_tokenCount) - _processedTicketTracker) // simply subtract otherwise.
-                : _processedTicketTracker - int256(_tokenCount);
-
+            _subtractFromTokenTracker(_projectId, _tokenCount);
             ticketBooth.redeem(
                 _holder,
                 _projectId,
@@ -810,6 +837,19 @@ contract TerminalV2Store is
             );
     }
 
+    function burn(
+        address _holder,
+        uint256 _projectId,
+        uint256 _tokenCount,
+        string calldata _memo,
+        bool _preferUnstaked
+    ) external override {
+        require(_tokenCount > 0, "TerminalV2DataLayer::burn: NO_OP");
+        _subtractFromTokenTracker(_projectId, _tokenCount);
+        ticketBooth.redeem(_holder, _projectId, _tokenCount, _preferUnstaked);
+        emit Burn(_holder, _projectId, _tokenCount, _memo, msg.sender);
+    }
+
     /**
       @notice
       Allows a project owner to migrate its funds and operations to a new contract.
@@ -824,7 +864,7 @@ contract TerminalV2Store is
         external
         payable
         override
-        onlyOwner
+        onlyPaymentLayer
     {
         // This TerminalV1 must be the project's current terminal.
         require(
@@ -855,10 +895,11 @@ contract TerminalV2Store is
 
     function addToBalance(uint256 _projectId) external payable override {
         require(msg.sender != owner(), "TODO BAD");
-        //TODO send to other.
         // This contract should not keep any ETH. It should relay it all
         // to the TerminalVault that owns this terminal.
-        ITerminalV2(owner()).addToBalance{value: msg.value}(_projectId);
+        ITerminalV2PaymentLayer(owner()).addToBalance{value: msg.value}(
+            _projectId
+        );
     }
 
     /**
@@ -872,7 +913,7 @@ contract TerminalV2Store is
         external
         payable
         override
-        onlyOwner
+        onlyPaymentLayer
     {
         // The amount must be positive.
         require(_amount > 0, "TerminalV1::addToBalance: BAD_AMOUNT");
@@ -892,11 +933,11 @@ contract TerminalV2Store is
       Adds to the contract addresses that projects can migrate their Tickets to.
 
       @dev
-      Only governance can add a contract to the migration allow list.
+      Only the owner can add a contract to the migration allow list.
 
       @param _contract The contract to allow.
     */
-    function allowMigration(ITerminal _contract) external override onlyGov {
+    function allowMigration(ITerminal _contract) external override onlyOwner {
         // Can't allow the zero address.
         require(
             _contract != ITerminal(address(0)),
@@ -907,6 +948,15 @@ contract TerminalV2Store is
         migrationIsAllowed[_contract] = !migrationIsAllowed[_contract];
 
         emit AllowMigration(_contract);
+    }
+
+    function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer)
+        external
+        override
+        onlyOwner
+    {
+        paymentLayer = _paymentLayer;
+        emit SetPaymentLayer(_paymentLayer, msg.sender);
     }
 
     /**
@@ -1009,12 +1059,6 @@ contract TerminalV2Store is
             _totalTokens
         );
 
-        // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
-        require(
-            _totalTokens + amount <= uint256(type(int256).max),
-            "TerminalV1::printReservedTickets: INT_LIMIT_REACHED"
-        );
-
         // Set the tracker to be the new total supply.
         _processedTokenTrackerOf[_projectId] = int256(_totalTokens + amount);
 
@@ -1057,15 +1101,15 @@ contract TerminalV2Store is
         );
 
         // Get the number of reserved tickets the project has.
-        uint256 _reservedTicketAmount = _reservedTokenAmountFrom(
+        uint256 _reservedTokenAmount = _reservedTokenAmountFrom(
             _processedTokenTrackerOf[_fundingCycle.projectId],
             _fundingCycle.reservedRate(),
             _totalSupply
         );
 
         // If there are reserved tickets, add them to the total supply.
-        if (_reservedTicketAmount > 0)
-            _totalSupply = _totalSupply + _reservedTicketAmount;
+        if (_reservedTokenAmount > 0)
+            _totalSupply = _totalSupply + _reservedTokenAmount;
 
         // If the amount being redeemed is the the total supply, return the rest of the overflow.
         if (_tokenCount == _totalSupply) return _currentOverflow;
@@ -1077,29 +1121,23 @@ contract TerminalV2Store is
             _totalSupply
         );
 
-        // Use the reconfiguration bonding curve if the queued cycle is pending approval according to the previous funding cycle's ballot.
-        uint256 _bondingCurveRate = fundingCycles.currentBallotStateOf(
+        // Use the ballot redemption rate if the queued cycle is pending approval according to the previous funding cycle's ballot.
+        uint256 _redemptionRate = fundingCycles.currentBallotStateOf(
             _fundingCycle.projectId
         ) == BallotState.Active
             ? _fundingCycle.ballotRedemptionRate()
             : _fundingCycle.redemptionRate();
 
-        // The bonding curve formula.
-        // https://www.desmos.com/calculator/sp9ru6zbpk
-        // where x is _tokenCount, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
-
         // These conditions are all part of the same curve. Edge conditions are separated because fewer operation are necessary.
-        if (_bondingCurveRate == 200) return _base;
-        // TODO NEW: 0 bonding curve means not redeemable.
-        if (_bondingCurveRate == 0) return 0;
-        // return PRBMath.mulDiv(_base, _tokenCount, _totalSupply);
+        if (_redemptionRate == 200) return _base;
+        if (_redemptionRate == 0) return 0;
         return
             PRBMath.mulDiv(
                 _base,
-                _bondingCurveRate +
+                _redemptionRate +
                     PRBMath.mulDiv(
                         _tokenCount,
-                        200 - _bondingCurveRate,
+                        200 - _redemptionRate,
                         _totalSupply
                     ),
                 200
@@ -1141,40 +1179,6 @@ contract TerminalV2Store is
 
         // Overflow is the balance of this project minus the reserved amount.
         return _balanceOf < _ethLimit ? 0 : _balanceOf - _ethLimit;
-    }
-
-    /**
-      @notice
-      Gets the amount of reserved tickets currently tracked for a project given a reserved rate.
-
-      @param _processedTicketTracker The tracker to make the calculation with.
-      @param _reservedRate The reserved rate to use to make the calculation.
-      @param _totalEligibleTickets The total amount to make the calculation with.
-
-      @return amount reserved ticket amount.
-    */
-    function _reservedTokenAmountFrom(
-        int256 _processedTicketTracker,
-        uint256 _reservedRate,
-        uint256 _totalEligibleTickets
-    ) private pure returns (uint256) {
-        // Get a reference to the amount of tickets that are unprocessed.
-        uint256 _unprocessedTicketBalanceOf = _processedTicketTracker >= 0 // preconfigure tickets shouldn't contribute to the reserved ticket amount.
-            ? _totalEligibleTickets - uint256(_processedTicketTracker)
-            : _totalEligibleTickets + uint256(-_processedTicketTracker);
-
-        // If there are no unprocessed tickets, return.
-        if (_unprocessedTicketBalanceOf == 0) return 0;
-
-        // If all tickets are reserved, return the full unprocessed amount.
-        if (_reservedRate == 200) return _unprocessedTicketBalanceOf;
-
-        return
-            PRBMath.mulDiv(
-                _unprocessedTicketBalanceOf,
-                200,
-                200 - _reservedRate
-            ) - _unprocessedTicketBalanceOf;
     }
 
     /**
@@ -1229,5 +1233,72 @@ contract TerminalV2Store is
                 msg.sender
             );
         }
+    }
+
+    function _subtractFromTokenTracker(uint256 _projectId, uint256 _amount)
+        private
+    {
+        // Get a reference to the processed ticket tracker for the project.
+        int256 _processedTokenTracker = _processedTokenTrackerOf[_projectId];
+
+        // Subtract the count from the processed ticket tracker.
+        // Subtract from processed tickets so that the difference between whats been processed and the
+        // total supply remains the same.
+        // If there are at least as many processed tickets as there are tickets being redeemed,
+        // the processed ticket tracker of the project will be positive. Otherwise it will be negative.
+        _processedTokenTrackerOf[_projectId] = _processedTokenTracker < 0 // If the tracker is negative, add the count and reverse it.
+            ? -int256(uint256(-_processedTokenTracker) + _amount) // the tracker is less than the count, subtract it from the count and reverse it.
+            : _processedTokenTracker < int256(_amount)
+            ? -(int256(_amount) - _processedTokenTracker) // simply subtract otherwise.
+            : _processedTokenTracker - int256(_amount);
+    }
+
+    function _setOverflowAllowance(
+        uint256 _amount,
+        uint256 _projectId,
+        uint256 _configuration
+    ) private {
+        overflowAllowanceOf[_projectId][_configuration] = _amount;
+
+        emit SetOverflowAllowance(
+            _projectId,
+            _configuration,
+            _amount,
+            msg.sender
+        );
+    }
+
+    /**
+      @notice
+      Gets the amount of reserved tickets currently tracked for a project given a reserved rate.
+
+      @param _processedTokenTracker The tracker to make the calculation with.
+      @param _reservedRate The reserved rate to use to make the calculation.
+      @param _totalEligibleTickets The total amount to make the calculation with.
+
+      @return amount reserved ticket amount.
+    */
+    function _reservedTokenAmountFrom(
+        int256 _processedTokenTracker,
+        uint256 _reservedRate,
+        uint256 _totalEligibleTickets
+    ) private pure returns (uint256) {
+        // Get a reference to the amount of tickets that are unprocessed.
+        uint256 _unprocessedTicketBalanceOf = _processedTokenTracker >= 0 // preconfigure tickets shouldn't contribute to the reserved ticket amount.
+            ? _totalEligibleTickets - uint256(_processedTokenTracker)
+            : _totalEligibleTickets + uint256(-_processedTokenTracker);
+
+        // If there are no unprocessed tickets, return.
+        if (_unprocessedTicketBalanceOf == 0) return 0;
+
+        // If all tickets are reserved, return the full unprocessed amount.
+        if (_reservedRate == 200) return _unprocessedTicketBalanceOf;
+
+        return
+            PRBMath.mulDiv(
+                _unprocessedTicketBalanceOf,
+                200,
+                200 - _reservedRate
+            ) - _unprocessedTicketBalanceOf;
     }
 }

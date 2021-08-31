@@ -6,7 +6,7 @@ import "./IFundingCycles.sol";
 import "./IPayDelegate.sol";
 import "./IRedeemDelegate.sol";
 
-interface ITerminalDataSource {
+interface IFundingCycleDataSource {
     function payData(
         FundingCycle calldata _fundingCycle,
         address _payer,
