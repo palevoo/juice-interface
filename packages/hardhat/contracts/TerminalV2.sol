@@ -465,6 +465,7 @@ contract TerminalV2 is ITerminalV2, Governable, Operatable, ReentrancyGuard {
         uint256 _tokenCount;
 
         (_fundingCycle, _weight, _tokenCount, _memo) = terminalV2Store.pay(
+            msg.sender,
             _amount,
             _projectId,
             _beneficiary,

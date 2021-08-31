@@ -9,6 +9,7 @@ import "./IRedeemDelegate.sol";
 interface ITerminalDataSource {
     function payData(
         FundingCycle calldata _fundingCycle,
+        address _payer,
         uint256 _amount,
         address _beneficiary,
         string calldata _memo
@@ -17,7 +18,6 @@ interface ITerminalDataSource {
         returns (
             uint256 weight,
             string calldata memo,
-            bool allow,
             IPayDelegate delegate
         );
 
@@ -32,7 +32,6 @@ interface ITerminalDataSource {
         returns (
             uint256 amount,
             string calldata memo,
-            bool allow,
             IRedeemDelegate delegate
         );
 }

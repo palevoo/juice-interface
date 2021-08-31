@@ -16,6 +16,7 @@ import "./abstract/Governable.sol";
 
 import "./libraries/Operations.sol";
 import "./libraries/Operations2.sol";
+import "./libraries/FundingCycleMetadataResolver.sol";
 
 /**
   @notice 
@@ -32,6 +33,8 @@ contract TerminalV2Store is
     Operatable,
     ReentrancyGuard
 {
+    using FundingCycleMetadataResolver for FundingCycle;
+
     // --- private stored properties --- //
 
     // The difference between the processed ticket tracker of a project and the project's ticket's total supply is the amount of tickets that
@@ -530,6 +533,7 @@ contract TerminalV2Store is
     //   @return The ID of the funding cycle that the payment was made during.
     // */
     function pay(
+        address _payer,
         uint256 _amount,
         uint256 _projectId,
         address _beneficiary,
@@ -537,7 +541,7 @@ contract TerminalV2Store is
         string memory _memo,
         bool _preferUnstakedTokens
     )
-        external
+        public
         override
         onlyOwner
         returns (
@@ -551,78 +555,75 @@ contract TerminalV2Store is
         fundingCycle = fundingCycles.currentOf(_projectId);
 
         // Must not be paused.
-        require(
-            ((fundingCycle.metadata >> 32) & 1) == 1,
-            "TerminalV2:_pay: PAUSED"
-        );
+        require(!fundingCycle.payPaused(), "TerminalV2:_pay: PAUSED");
 
         require(fundingCycle.number > 0, "TerminalV2::_pay: NO_FUNDING_CYCLE");
 
         IPayDelegate _delegate;
 
         // The bit that signals whether or not the data source should be used is it bit 37 of the funding cycle's metadata.
-        if ((fundingCycle.metadata >> 37) & 1 == 1) {
-            bool _allowed;
-            (weight, memo, _allowed, _delegate) = ITerminalDataSource(
-                address(uint160(fundingCycle.metadata >> 37))
-            ).payData(fundingCycle, _amount, _beneficiary, _memo);
-            require(_allowed, "TerminalV2::_pay: DISALLOWED");
+        if (fundingCycle.useDataSourceForPay()) {
+            (weight, memo, _delegate) = ITerminalDataSource(
+                fundingCycle.dataSource()
+            ).payData(fundingCycle, _payer, _amount, _beneficiary, _memo);
         } else {
             weight = fundingCycle.weight;
             memo = _memo;
         }
 
-        // Multiply the amount by the funding cycle's weight to determine the amount of tickets to print.
-        uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, weight);
+        // scope to avoid stack too deep errors. Inspired by uniswap https://github.com/Uniswap/uniswap-v2-periphery/blob/69617118cda519dab608898d62aaa79877a61004/contracts/UniswapV2Router02.sol#L327-L333.
+        {
+            // Multiply the amount by the funding cycle's weight to determine the amount of tickets to print.
+            uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, weight);
 
-        // Only print the tickets that are unreserved.
-        tokenCount = PRBMath.mulDiv(
-            _weightedAmount,
-            // The reserved rate is stored in bits 8-15 of the metadata property.
-            200 - uint256(uint8(fundingCycle.metadata >> 8)),
-            200
-        );
-
-        // The minimum amount of unreserved tickets must be printed.
-        require(
-            tokenCount >= _minReturnedTokens,
-            "TerminalV2::_pay: INADEQUATE"
-        );
-
-        // Add to the balance of the project.
-        balanceOf[_projectId] = balanceOf[_projectId] + _amount;
-
-        // If theres an unreserved weighted amount, print tickets representing this amount for the beneficiary.
-        if (tokenCount > 0) {
-            // Print the project's tickets for the beneficiary.
-            ticketBooth.print(
-                _beneficiary,
-                _projectId,
-                tokenCount,
-                _preferUnstakedTokens
+            // Only print the tickets that are unreserved.
+            tokenCount = PRBMath.mulDiv(
+                _weightedAmount,
+                // The reserved rate is stored in bits 8-15 of the metadata property.
+                200 - fundingCycle.reservedRate(),
+                200
             );
-        } else if (_weightedAmount > 0) {
-            // If there is no unreserved weight amount but there is a weighted amount,
-            // the full weighted amount should be explicitly tracked as reserved since no unreserved tickets were printed.
-            // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
-            // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
+            // The minimum amount of unreserved tickets must be printed.
             require(
-                _processedTokenTrackerOf[_projectId] > 0 ||
-                    uint256(-_processedTokenTrackerOf[_projectId]) +
-                        uint256(_weightedAmount) <=
-                    uint256(type(int256).max),
-                "TerminalV2::_pay: INT_LIMIT_REACHED"
+                tokenCount >= _minReturnedTokens,
+                "TerminalV2::_pay: INADEQUATE"
             );
 
-            // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
-            _processedTokenTrackerOf[_projectId] =
-                _processedTokenTrackerOf[_projectId] -
-                int256(_weightedAmount);
+            // Add to the balance of the project.
+            balanceOf[_projectId] = balanceOf[_projectId] + _amount;
+            // If theres an unreserved weighted amount, print tickets representing this amount for the beneficiary.
+            if (tokenCount > 0) {
+                // Print the project's tickets for the beneficiary.
+                ticketBooth.print(
+                    _beneficiary,
+                    _projectId,
+                    tokenCount,
+                    _preferUnstakedTokens
+                );
+            } else if (_weightedAmount > 0) {
+                // If there is no unreserved weight amount but there is a weighted amount,
+                // the full weighted amount should be explicitly tracked as reserved since no unreserved tickets were printed.
+                // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
+                // Make sure int casting isnt overflowing the int. 2^255 - 1 is the largest number that can be stored in an int.
+                require(
+                    _processedTokenTrackerOf[_projectId] > 0 ||
+                        uint256(-_processedTokenTrackerOf[_projectId]) +
+                            uint256(_weightedAmount) <=
+                        uint256(type(int256).max),
+                    "TerminalV2::_pay: INT_LIMIT_REACHED"
+                );
+
+                // Subtract the total weighted amount from the tracker so the full reserved ticket amount can be printed later.
+                _processedTokenTrackerOf[_projectId] =
+                    _processedTokenTrackerOf[_projectId] -
+                    int256(_weightedAmount);
+            }
         }
 
         if (_delegate != IPayDelegate(address(0)))
             _delegate.didPay(
                 fundingCycle,
+                _payer,
                 _amount,
                 weight,
                 tokenCount,
@@ -663,10 +664,7 @@ contract TerminalV2Store is
         require(fundingCycle.id > 0, "TerminalV2::tap: NOT_FOUND");
 
         // Must not be paused.
-        require(
-            ((fundingCycle.metadata >> 33) & 1) == 1,
-            "TerminalV2::tap: PAUSED"
-        );
+        require(fundingCycle.tapPaused(), "TerminalV2::tap: PAUSED");
 
         // Make sure the currency's match.
         require(
@@ -739,18 +737,14 @@ contract TerminalV2Store is
         fundingCycle = fundingCycles.currentOf(_projectId);
 
         // Must not be paused.
-        require(
-            ((fundingCycle.metadata >> 34) & 1) == 1,
-            "TerminalV2:redeem: PAUSED"
-        );
+        require(fundingCycle.redeemPaused(), "TerminalV2:redeem: PAUSED");
 
         IRedeemDelegate _delegate;
 
         // The bit that signals whether or not the delegate should be used is it bit 36 of the funding cycle's metadata.
-        if ((fundingCycle.metadata >> 36) & 1 == 1) {
-            bool _allowed;
-            (claimAmount, memo, _allowed, _delegate) = ITerminalDataSource(
-                address(uint160(fundingCycle.metadata >> 37))
+        if (fundingCycle.useDataSourceForRedeem()) {
+            (claimAmount, memo, _delegate) = ITerminalDataSource(
+                fundingCycle.dataSource()
             ).redeemData(
                     fundingCycle,
                     _holder,
@@ -758,7 +752,6 @@ contract TerminalV2Store is
                     _beneficiary,
                     _memo
                 );
-            require(_allowed, "TerminalV2::redeem: DISALLOWED");
         } else {
             claimAmount = _claimableOverflowOf(fundingCycle, _tokenCount);
             memo = _memo;
@@ -957,16 +950,16 @@ contract TerminalV2Store is
             "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_RESERVED_RATE"
         );
 
-        // The bonding curve rate must be between 0 and 200.
+        // The redemption rate must be between 0 and 200.
         require(
-            _metadata.bondingCurveRate <= 200,
-            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_BONDING_CURVE_RATE"
+            _metadata.redemptionRate <= 200,
+            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_REDEMPTION_RATE"
         );
 
-        // The reconfiguration bonding curve rate must be less than or equal to 200.
+        // The ballot redemption rate must be less than or equal to 200.
         require(
-            _metadata.reconfigurationBondingCurveRate <= 200,
-            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_RECONFIGURATION_BONDING_CURVE_RATE"
+            _metadata.ballotRedemptionRate <= 200,
+            "TerminalV2::_validateAndPackFundingCycleMetadata: BAD_BALLOT_REDEMPTION_RATE"
         );
 
         // version 0 in the first 8 bytes.
@@ -974,9 +967,9 @@ contract TerminalV2Store is
         // reserved rate in bits 8-15.
         packed |= _metadata.reservedRate << 8;
         // bonding curve in bits 16-23.
-        packed |= _metadata.bondingCurveRate << 16;
+        packed |= _metadata.redemptionRate << 16;
         // reconfiguration bonding curve rate in bits 24-31.
-        packed |= _metadata.reconfigurationBondingCurveRate << 24;
+        packed |= _metadata.ballotRedemptionRate << 24;
         // pause pay in bit 32.
         packed |= (_metadata.pausePay ? 1 : 0) << 32;
         // pause tap in bit 33.
@@ -1012,7 +1005,7 @@ contract TerminalV2Store is
         // The reserved rate is in bits 8-15 of the metadata.
         amount = _reservedTokenAmountFrom(
             _processedTokenTrackerOf[_projectId],
-            uint256(uint8(_fundingCycle.metadata >> 8)),
+            _fundingCycle.reservedRate(),
             _totalTokens
         );
 
@@ -1064,10 +1057,9 @@ contract TerminalV2Store is
         );
 
         // Get the number of reserved tickets the project has.
-        // The reserved rate is in bits 8-15 of the metadata.
         uint256 _reservedTicketAmount = _reservedTokenAmountFrom(
             _processedTokenTrackerOf[_fundingCycle.projectId],
-            uint256(uint8(_fundingCycle.metadata >> 8)),
+            _fundingCycle.reservedRate(),
             _totalSupply
         );
 
@@ -1088,9 +1080,9 @@ contract TerminalV2Store is
         // Use the reconfiguration bonding curve if the queued cycle is pending approval according to the previous funding cycle's ballot.
         uint256 _bondingCurveRate = fundingCycles.currentBallotStateOf(
             _fundingCycle.projectId
-        ) == BallotState.Active // The reconfiguration bonding curve rate is stored in bits 24-31 of the metadata property.
-            ? uint256(uint8(_fundingCycle.metadata >> 24)) // The bonding curve rate is stored in bits 16-23 of the data property after.
-            : uint256(uint8(_fundingCycle.metadata >> 16));
+        ) == BallotState.Active
+            ? _fundingCycle.ballotRedemptionRate()
+            : _fundingCycle.redemptionRate();
 
         // The bonding curve formula.
         // https://www.desmos.com/calculator/sp9ru6zbpk

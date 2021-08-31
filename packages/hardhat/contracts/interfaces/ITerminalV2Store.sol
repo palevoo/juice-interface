@@ -14,8 +14,8 @@ import "./IOperatorStore.sol";
 
 struct FundingCycleMetadataV2 {
     uint256 reservedRate;
-    uint256 bondingCurveRate;
-    uint256 reconfigurationBondingCurveRate;
+    uint256 redemptionRate;
+    uint256 ballotRedemptionRate;
     bool pausePay;
     bool pauseTap;
     bool pauseRedeem;
@@ -148,6 +148,7 @@ interface ITerminalV2Store {
         );
 
     function pay(
+        address payer,
         uint256 _amount,
         uint256 _projectId,
         address _beneficiary,
