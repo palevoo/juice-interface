@@ -21,6 +21,4 @@ interface ITerminal {
     function addToBalance(uint256 _projectId) external payable;
 
     function allowMigration(ITerminal _contract) external;
-
-    function migrate(uint256 _projectId, ITerminal _to) external;
 }

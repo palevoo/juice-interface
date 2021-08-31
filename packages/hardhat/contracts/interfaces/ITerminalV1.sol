@@ -10,6 +10,7 @@ import "./IProjects.sol";
 import "./IModStore.sol";
 import "./ITerminal.sol";
 import "./IOperatorStore.sol";
+import "./ITerminalDirectory.sol";
 
 struct FundingCycleMetadata {
     uint256 reservedRate;
@@ -204,4 +205,6 @@ interface ITerminalV1 {
     function appointGovernance(address payable _pendingGovernance) external;
 
     function acceptGovernance() external;
+
+    function migrate(uint256 _projectId, ITerminal _to) external;
 }
