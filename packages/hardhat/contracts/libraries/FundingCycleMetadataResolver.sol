@@ -2,6 +2,7 @@
 pragma solidity 0.8.6;
 
 import "./../interfaces/IFundingCycles.sol";
+import "./../interfaces/IFundingCycleDataSource.sol";
 
 library FundingCycleMetadataResolver {
     function reservedRate(FundingCycle memory _fundingCycle)
@@ -71,8 +72,11 @@ library FundingCycleMetadataResolver {
     function dataSource(FundingCycle memory _fundingCycle)
         internal
         pure
-        returns (address)
+        returns (IFundingCycleDataSource)
     {
-        return address(uint160(_fundingCycle.metadata >> 37));
+        return
+            IFundingCycleDataSource(
+                address(uint160(_fundingCycle.metadata >> 37))
+            );
     }
 }

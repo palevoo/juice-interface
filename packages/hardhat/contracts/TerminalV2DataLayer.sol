@@ -608,15 +608,13 @@ contract TerminalV2DataLayer is
 
         // If the funding cycle has configured a data source, use it to derive a weight and memo.
         if (fundingCycle.useDataSourceForPay()) {
-            (weight, memo, _delegate) = IFundingCycleDataSource(
-                fundingCycle.dataSource()
-            ).payData(
-                    _payer,
-                    _amount,
-                    fundingCycle.weight,
-                    _beneficiary,
-                    _memo
-                );
+            (weight, memo, _delegate) = fundingCycle.dataSource().payData(
+                _payer,
+                _amount,
+                fundingCycle.weight,
+                _beneficiary,
+                _memo
+            );
             // Otherwise use the funding cycle's weight
         } else {
             weight = fundingCycle.weight;
@@ -850,9 +848,9 @@ contract TerminalV2DataLayer is
 
         // If the funding cycle has configured a data source, use it to derive a claim amount and memo.
         if (fundingCycle.useDataSourceForRedeem()) {
-            (claimAmount, memo, _delegate) = IFundingCycleDataSource(
-                fundingCycle.dataSource()
-            ).redeemData(_holder, _tokenCount, _beneficiary, _memo);
+            (claimAmount, memo, _delegate) = fundingCycle
+                .dataSource()
+                .redeemData(_holder, _tokenCount, _beneficiary, _memo);
         } else {
             claimAmount = _claimableOverflowOf(fundingCycle, _tokenCount);
             memo = _memo;
