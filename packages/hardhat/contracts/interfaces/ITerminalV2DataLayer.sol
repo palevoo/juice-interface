@@ -89,14 +89,12 @@ interface ITerminalV2DataLayer {
 
     function balanceOf(uint256 _projectId) external view returns (uint256);
 
-    // function fee() external view returns (uint256);
-
     function overflowAllowanceOf(uint256 _projectId, uint256 _configuration)
         external
         view
         returns (uint256);
 
-    function canPrintPreminedTokens(uint256 _projectId)
+    function canMintPreminedTokens(uint256 _projectId)
         external
         view
         returns (bool);

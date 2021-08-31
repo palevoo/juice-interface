@@ -20,10 +20,22 @@ import "./libraries/FundingCycleMetadataResolver.sol";
 
 /**
   @notice 
-  This contract manages the Juicebox ecosystem, serves as a payment terminal, and custodies all funds.
+  This contract stiches together funding cycles and community tokens. It makes sure all activity is accounted for and correct. 
 
   @dev 
-  A project can transfer its funds, along with the power to reconfigure and mint/burn their Tickets, from this contract to another allowed terminal contract at any time.
+  Each project can only have one terminal registered at a time with the TerminalDirectory. This is how the outside world knows where to send money to when trying to pay a project.
+  The project's currently set terminal is the only contract that can interact with the FundingCycles and TicketBooth contracts on behalf of the project.
+
+  The project's currently set terminal is also the contract that will receive payments by default when the outside world references directly from the TerminalDirectory.
+  Since this contract doesn't deal with money directly, it will immedeiately forward payments to appropriate functions in the payment layer if it receives external calls via ITerminal methods `pay` or `addToBalance`.
+  
+  Inherits from:
+
+  ITerminalV2DataLayer - general interface for the methods in this contract that change the blockchain's state according to the Juicebox protocol's rules.
+  ITerminalDataLayer - conforms to ITerminal, which allows projects to migrate to this contract from other ITerminals (like TerminalV1), and to facilitate a project's future migration decisions.
+  Ownable - the owner of this contract can specify its payment layer contract, and add new ITerminals to an allow list that projects currently using this terminal can migrate to.
+  Operatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
+  ReentrencyGuard - several function in this contract shouldn't be accessible recursively.
 */
 contract TerminalV2DataLayer is
     ITerminalV2DataLayer,
@@ -32,51 +44,49 @@ contract TerminalV2DataLayer is
     Operatable,
     ReentrancyGuard
 {
+    // A library that parses the packed funding cycle metadata into a more friendly format.
     using FundingCycleMetadataResolver for FundingCycle;
 
     // Modifier to only allow the payment layer to call the function.
     modifier onlyPaymentLayer() {
-        require(
-            msg.sender == address(paymentLayer),
-            "TerminalV2: UNAUTHORIZED"
-        );
+        require(msg.sender == address(paymentLayer), "TV2DL: UNAUTHORIZED");
         _;
     }
     // --- private stored properties --- //
 
-    // The difference between the processed ticket tracker of a project and the project's ticket's total supply is the amount of tickets that
-    // still need to have reserves printed against them.
+    // The difference between the processed token tracker of a project and the project's token's total supply is the amount of tokens that
+    // still need to have reserves minted against them.
     mapping(uint256 => int256) private _processedTokenTrackerOf;
 
-    // The amount of token printed prior to a project configuring their first funding cycle.
+    // The amount of tokens printed prior to a project configuring their first funding cycle and receiving a payment.
     mapping(uint256 => uint256) private _preconfigureTokenCountOf;
 
     // --- public immutable stored properties --- //
 
-    /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
+    /// @notice The Projects contract which mints ERC-721's that represent project ownership.
     IProjects public immutable override projects;
 
     /// @notice The contract storing all funding cycle configurations.
     IFundingCycles public immutable override fundingCycles;
 
-    /// @notice The contract that manages Ticket printing and redeeming.
+    /// @notice The contract that manages token minting and burning.
     ITicketBooth public immutable override ticketBooth;
 
-    /// @notice The contract that stores mods for each project.
+    /// @notice The contract that stores split modules for each project.
     IModStore public immutable override modStore;
 
-    /// @notice The prices feeds.
+    /// @notice The contract that exposes price feeds.
     IPrices public immutable override prices;
 
     /// @notice The directory of terminals.
     ITerminalDirectory public immutable override terminalDirectory;
 
-    // // --- public stored properties --- //
+    // --- public stored properties --- //
 
-    /// @notice The amount of ETH that each project is responsible for.
+    /// @notice The amount of ETH that each project has.
     mapping(uint256 => uint256) public override balanceOf;
 
-    // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
+    // Whether or not a particular contract is available for projects to migrate their funds to.
     mapping(ITerminal => bool) public override migrationIsAllowed;
 
     // The amount of overflow that a project is allowed to tap into on-demand.
@@ -84,7 +94,7 @@ contract TerminalV2DataLayer is
         public
         override overflowAllowanceOf;
 
-    /// @notice The percent fee the Juicebox project takes from tapped amounts. Out of 200.
+    /// @notice The contract that stores funds, and manages inflows/outflows.
     ITerminalV2PaymentLayer public override paymentLayer;
 
     // --- external views --- //
@@ -95,13 +105,13 @@ contract TerminalV2DataLayer is
 
       @param _projectId The ID of the project to get overflow for.
 
-      @return overflow The current overflow of funds for the project.
+      @return The current amount of overflow that project has.
     */
     function currentOverflowOf(uint256 _projectId)
         external
         view
         override
-        returns (uint256 overflow)
+        returns (uint256)
     {
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
@@ -114,12 +124,12 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Gets the amount of reserved tokens that a project has.
+      Gets the amount of reserved tokens that a project has available to distribute.
 
-      @param _projectId The ID of the project to get overflow for.
-      @param _reservedRate The reserved rate to use to make the calculation.
+      @param _projectId The ID of the project to get a reserved token balance of.
+      @param _reservedRate The reserved rate to use when making the calculation.
 
-      @return amount overflow The current overflow of funds for the project.
+      @return The current amount of reserved tokens.
     */
     function reservedTokenBalanceOf(uint256 _projectId, uint256 _reservedRate)
         external
@@ -137,14 +147,14 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      The amount of tokens that can be claimed by the given address.
+      The amount of overflowed ETH that can be claimed by the specified number of tokens.
 
-      @dev If there is a funding cycle reconfiguration ballot open for the project, the project's current bonding curve is bypassed.
+      @dev If the project has an active funding cycle reconfiguration ballot, the project's ballot redemption rate is used.
 
       @param _projectId The ID of the project to get a claimable amount for.
-      @param _tokenCount The number of Tickets that would be redeemed to get the resulting amount.
+      @param _tokenCount The number of tokens to make the calculation with. 
 
-      @return amount The amount of tokens that can be claimed.
+      @return The amount of overflowed ETH that can be claimed.
     */
     function claimableOverflowOf(uint256 _projectId, uint256 _tokenCount)
         external
@@ -163,13 +173,13 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Whether or not a project can still print premined tokens.
+      Whether or not a project can still mint premined tokens.
 
       @param _projectId The ID of the project to get the status of.
 
       @return Boolean flag.
     */
-    function canPrintPreminedTokens(uint256 _projectId)
+    function canMintPreminedTokens(uint256 _projectId)
         public
         view
         override
@@ -180,7 +190,7 @@ contract TerminalV2DataLayer is
             ticketBooth.totalSupplyOf(_projectId) ==
             _preconfigureTokenCountOf[_projectId] &&
             // The above condition is still possible after post-configured tokens have been printed due to token redeeming.
-            // The only case when processedTicketTracker is 0 is before redeeming and printing reserved tokens.
+            // The only case when the processedTokenTracker is 0 is before redeeming and before minting reserved tokens.
             _processedTokenTrackerOf[_projectId] >= 0 &&
             uint256(_processedTokenTrackerOf[_projectId]) ==
             _preconfigureTokenCountOf[_projectId];
@@ -188,15 +198,15 @@ contract TerminalV2DataLayer is
 
     // --- external transactions --- //
 
-    // /**
-    //   // @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
-    //   @param _fundingCycles A funding cycle configuration store.
-    //   // @param _ticketBooth A contract that manages Ticket printing and redeeming.
-    //   @param _operatorStore A contract storing operator assignments.
-    //   // @param _modStore A storage for a project's mods.
-    //   // @param _prices A price feed contract to use.
-    //   // @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
-    // */
+    /**
+      @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
+      @param _fundingCycles The contract storing all funding cycle configurations.
+      @param _ticketBooth The contract that manages token minting and burning.
+      @param _operatorStore A contract storing operator assignments.
+      @param _modStore The contract that stores split modules for each project.
+      @param _prices The contract that exposes price feeds.
+      @param _terminalDirectory The directory of terminals.
+    */
     constructor(
         IProjects _projects,
         IFundingCycles _fundingCycles,
@@ -213,7 +223,7 @@ contract TerminalV2DataLayer is
                 _modStore != IModStore(address(0)) &&
                 _prices != IPrices(address(0)) &&
                 _terminalDirectory != ITerminalDirectory(address(0)),
-            "TerminalV2: ZERO_ADDRESS"
+            "TV2DL: ZERO_ADDRESS"
         );
         projects = _projects;
         fundingCycles = _fundingCycles;
@@ -225,7 +235,7 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Deploys a project. This will mint an ERC-721 into the `_owner`'s account, configure a first funding cycle, and set up any mods.
+      Deploys a project. This will mint an ERC-721 into the `_owner`'s account, configure a first funding cycle, and set up any split modules.
 
       @dev
       Each operation withing this transaction can be done in sequence separately.
@@ -233,27 +243,38 @@ contract TerminalV2DataLayer is
       @dev
       Anyone can deploy a project on an owner's behalf.
 
+      @dev 
+      A project owner will be able to reconfigure the funding cycle's properties as long as it has not yet received a payment.
+
       @param _owner The address that will own the project.
-      @param _handle The project's unique handle.
-      @param _uri A link to information about the project and this funding cycle.
-      @param _properties The funding cycle configuration.
-        @dev _properties.target The amount that the project wants to receive in this funding cycle. Sent as a wad.
+      @param _handle The project's unique handle. This can be updated any time by the owner of the project.
+      @param _uri A link to associate with the project. This can be updated any time by the owner of the project.
+      @param _properties The funding cycle configuration properties. These properties will remain fixed for the duration of the funding cycle.
+        @dev _properties.target The amount that the project wants to payout during a funding cycle. Sent as a wad (18 decimals).
         @dev _properties.currency The currency of the `target`. Send 0 for ETH or 1 for USD.
-        @dev _properties.duration The duration of the funding stage for which the `target` amount is needed. Measured in days. Send 0 for a boundless cycle reconfigurable at any time.
-        @dev _properties.cycleLimit The number of cycles that this configuration should last for before going back to the last permanent. This has no effect for a project's first funding cycle.
-        @dev _properties.discountRate A number from 0-200 indicating how valuable a contribution to this funding stage is compared to the project's previous funding stage.
-          If it's 200, each funding stage will have equal weight.
-          If the number is 180, a contribution to the next funding stage will only give you 90% of tickets given to a contribution of the same amount during the current funding stage.
-          If the number is 0, an non-recurring funding stage will get made.
-        @dev _properties.ballot The new ballot that will be used to approve subsequent reconfigurations.
+        @dev _properties.duration The duration of the funding cycle for which the `target` amount is needed. Measured in days. Send 0 for cycles that are reconfigurable at any time.
+        @dev _properties.cycleLimit The number of cycles that this configuration should last for before going back to the last permanent cycle. This has no effect for a project's first funding cycle.
+        @dev _properties.discountRate A number from 0-200 (0-20%) indicating how many tokens will be minted as a result of a contribution made to this funding cycle compared to one made to the project's next funding cycle.
+          If it's 0 (0%), each funding cycle's will have equal weight.
+          If the number is 100 (10%), a contribution to the next funding cycle will only mint 90% of tokens that a contribution of the same amount made during the current funding cycle mints.
+          If the number is 200 (20%), the difference will be 20%. 
+          There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
+        @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
       @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
-        @dev _metadata.reservedRate A number from 0-200 indicating the percentage of each contribution's tickets that will be reserved for the project owner.
-        @dev _metadata.bondingCurveRate The rate from 0-200 at which a project's Tickets can be redeemed for surplus.
+        @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token split modules.
+        @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
-          where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
-        @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-      @param _payoutMods Any payout mods to set.
-      @param _ticketMods Any ticket mods to set.
+          where x is _count, o is _currentOverflow, s is _totalSupply, and r is _redemptionRate.
+        @dev _metadata.ballotRedemptionRate The redemption rate to apply when there is an active ballot.
+        @dev _metadata.pausePay Whether or not the pay functionality should be paused during this cycle.
+        @dev _metadata.pauseTap Whether or not the tap functionality should be paused during this cycle.
+        @dev _metadata.pauseRedeem Whether or not the redeem functionality should be paused during this cycle.
+        @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
+        @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
+        @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
+      @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
+      @param _payoutMods Any payout split modules to set.
+      @param _tokenMods Any token split modules to set.
     */
     function deploy(
         address _owner,
@@ -263,26 +284,27 @@ contract TerminalV2DataLayer is
         FundingCycleMetadataV2 calldata _metadata,
         uint256 _overflowAllowance,
         PayoutMod[] memory _payoutMods,
-        TicketMod[] memory _ticketMods
+        TicketMod[] memory _tokenMods
     ) external override {
-        // Make sure the metadata checks out. If it does, return a packed version of it.
+        // Make sure the metadata is validated and packed into a uint256.
         uint256 _packedMetadata = _validateAndPackFundingCycleMetadata(
             _metadata
         );
 
-        // Create the project for the owner.
+        // Create the project for the owner. This this contract as the project's terminal,
+        // which will give it exclusive access to manage the project's funding cycles and tokens.
         uint256 _projectId = projects.create(_owner, _handle, _uri, this);
 
-        // Configure the funding stage's state.
+        // Configure the funding cycle's properties.
         FundingCycle memory _fundingCycle = fundingCycles.configure(
             _projectId,
             _properties,
             _packedMetadata,
-            10, // Fee fixed at 10
-            true
+            10, // Fee fixed at 5% (number is out of 200)
+            true // configure the active funding cycle. This property shouldn't matter since the project shouldn't yet have a funding cycle.
         );
 
-        // Set payout mods if there are any.
+        // Set payout split modules if there are any.
         if (_payoutMods.length > 0)
             modStore.setPayoutMods(
                 _projectId,
@@ -290,14 +312,15 @@ contract TerminalV2DataLayer is
                 _payoutMods
             );
 
-        // Set ticket mods if there are any.
-        if (_ticketMods.length > 0)
+        // Set token split modules if there are any.
+        if (_tokenMods.length > 0)
             modStore.setTicketMods(
                 _projectId,
                 _fundingCycle.configured,
-                _ticketMods
+                _tokenMods
             );
 
+        // Set the overflow allowance if the value is different from the currently set value.
         if (
             _overflowAllowance !=
             overflowAllowanceOf[_projectId][_fundingCycle.configured]
@@ -318,25 +341,33 @@ contract TerminalV2DataLayer is
       @dev
       Only a project's owner or a designated operator can configure its funding cycles.
 
-      @param _projectId The ID of the project being reconfigured.
-      @param _properties The funding cycle configuration.
-        @dev _properties.target The amount that the project wants to receive in this funding stage. Sent as a wad.
+      @param _projectId The ID of the project whos funding cycles are being reconfigured.
+      @param _properties The funding cycle configuration properties. These properties will remain fixed for the duration of the funding cycle.
+        @dev _properties.target The amount that the project wants to payout during a funding cycle. Sent as a wad (18 decimals).
         @dev _properties.currency The currency of the `target`. Send 0 for ETH or 1 for USD.
-        @dev _properties.duration The duration of the funding stage for which the `target` amount is needed. Measured in days. Send 0 for a boundless cycle reconfigurable at any time.
-        @dev _properties.cycleLimit The number of cycles that this configuration should last for before going back to the last permanent. This has no effect for a project's first funding cycle.
-        @dev _properties.discountRate A number from 0-200 indicating how valuable a contribution to this funding stage is compared to the project's previous funding stage.
-          If it's 200, each funding stage will have equal weight.
-          If the number is 180, a contribution to the next funding stage will only give you 90% of tickets given to a contribution of the same amount during the current funding stage.
-          If the number is 0, an non-recurring funding stage will get made.
-        @dev _properties.ballot The new ballot that will be used to approve subsequent reconfigurations.
+        @dev _properties.duration The duration of the funding cycle for which the `target` amount is needed. Measured in days. Send 0 for cycles that are reconfigurable at any time.
+        @dev _properties.cycleLimit The number of cycles that this configuration should last for before going back to the last permanent cycle. This has no effect for a project's first funding cycle.
+        @dev _properties.discountRate A number from 0-200 (0-20%) indicating how many tokens will be minted as a result of a contribution made to this funding cycle compared to one made to the project's next funding cycle.
+          If it's 0 (0%), each funding cycle's will have equal weight.
+          If the number is 100 (10%), a contribution to the next funding cycle will only mint 90% of tokens that a contribution of the same amount made during the current funding cycle mints.
+          If the number is 200 (20%), the difference will be 20%. 
+          There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
+        @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
       @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
-        @dev _metadata.reservedRate A number from 0-200 indicating the percentage of each contribution's tickets that will be reserved for the project owner.
-        @dev _metadata.bondingCurveRate The rate from 0-200 at which a project's Tickets can be redeemed for surplus.
+        @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token split modules.
+        @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
-          where x is _count, o is _currentOverflow, s is _totalSupply, and r is _bondingCurveRate.
-        @dev _metadata.reconfigurationBondingCurveRate The bonding curve rate to apply when there is an active ballot.
-      @param _payoutMods Any payout mods to set.
-      @param _ticketMods Any ticket mods to set.
+          where x is _count, o is _currentOverflow, s is _totalSupply, and r is _redemptionRate.
+        @dev _metadata.ballotRedemptionRate The redemption rate to apply when there is an active ballot.
+        @dev _metadata.pausePay Whether or not the pay functionality should be paused during this cycle.
+        @dev _metadata.pauseTap Whether or not the tap functionality should be paused during this cycle.
+        @dev _metadata.pauseRedeem Whether or not the redeem functionality should be paused during this cycle.
+        @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
+        @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
+        @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
+      @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
+      @param _payoutMods Any payout split modules to set.
+      @param _tokenMods Any token split modules to set.
 
       @return The ID of the funding cycle that was successfully configured.
     */
@@ -346,7 +377,7 @@ contract TerminalV2DataLayer is
         FundingCycleMetadataV2 calldata _metadata,
         uint256 _overflowAllowance,
         PayoutMod[] memory _payoutMods,
-        TicketMod[] memory _ticketMods
+        TicketMod[] memory _tokenMods
     )
         external
         override
@@ -358,21 +389,21 @@ contract TerminalV2DataLayer is
         )
         returns (uint256)
     {
-        // Make sure the metadata is validated, and pack it into a uint256.
+        // Make sure the metadata is validated and packed into a uint256.
         uint256 _packedMetadata = _validateAndPackFundingCycleMetadata(
             _metadata
         );
 
-        // All reserved tickets must be printed before configuring.
+        // All reserved tokens must be minted before configuring.
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
             ticketBooth.totalSupplyOf(_projectId)
         ) _mintReservedTokens(_projectId, "");
 
-        // If the project can still print premined tickets configure the active funding cycle instead of creating a standby one.
-        bool _shouldConfigureActive = canPrintPreminedTokens(_projectId);
+        // If the project can still mint premined tokens, configure the active funding cycle instead of queuing one for after the active one expires.
+        bool _shouldConfigureActive = canMintPreminedTokens(_projectId);
 
-        // Configure the funding stage's state.
+        // Configure the funding cycle's properties.
         FundingCycle memory _fundingCycle = fundingCycles.configure(
             _projectId,
             _properties,
@@ -381,7 +412,7 @@ contract TerminalV2DataLayer is
             _shouldConfigureActive
         );
 
-        // Set payout mods for the new configuration if there are any.
+        // Set payout split modules if there are any.
         if (_payoutMods.length > 0)
             modStore.setPayoutMods(
                 _projectId,
@@ -389,14 +420,15 @@ contract TerminalV2DataLayer is
                 _payoutMods
             );
 
-        // Set payout mods for the new configuration if there are any.
-        if (_ticketMods.length > 0)
+        // Set token split modules if there are any.
+        if (_tokenMods.length > 0)
             modStore.setTicketMods(
                 _projectId,
                 _fundingCycle.configured,
-                _ticketMods
+                _tokenMods
             );
 
+        // Set the overflow allowance if the value is different from the currently set value.
         if (
             _overflowAllowance !=
             overflowAllowanceOf[_projectId][_fundingCycle.configured]
@@ -411,6 +443,7 @@ contract TerminalV2DataLayer is
     }
 
     /**
+      HERE
       @notice
       Allows a project to print tokens for a specified beneficiary before payments have been received.
 
@@ -464,8 +497,8 @@ contract TerminalV2DataLayer is
         // Make sure the project hasnt printed tokens that werent preconfigure.
         // Do this check after the external calls above.
         require(
-            canPrintPreminedTokens(_projectId),
-            "TerminalV2::printPreminedTickets: ALREADY_ACTIVE"
+            canMintPreminedTokens(_projectId),
+            "TerminalV2::canMintPreminedTokens: ALREADY_ACTIVE"
         );
 
         // Set the preconfigure tickets as processed so that reserved tickets cant be minted against them.
