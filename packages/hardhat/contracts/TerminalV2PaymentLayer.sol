@@ -215,14 +215,41 @@ contract TerminalV2PaymentLayer is
                 _minReturnedWei
             );
 
-        // Send the funds to the beneficiary.
-        Address.sendValue(_beneficiary, _withdrawnAmount);
+        // Get a reference to the project owner, which will receive tokens from paying the platform fee
+        // and receive any extra distributable funds not allocated to payout splits.
+        address payable _projectOwner = payable(projects.ownerOf(_projectId));
+
+        // Get a reference to the handle of the project paying the fee and sending payouts.
+        bytes32 _handle = projects.handleOf(_projectId);
+
+        // Take a fee from the _withdrawnAmount, if needed.
+        // The project's owner will be the beneficiary of the resulting minted tokens from platform project.
+        // The platform project's ID is 1.
+        uint256 _feeAmount = _fundingCycle.fee == 0 || _projectId == 1
+            ? 0
+            : _takeFee(
+                _withdrawnAmount,
+                _fundingCycle.fee,
+                _projectOwner,
+                string(bytes.concat("Fee from @", _handle))
+            );
+
+        // The leftover amount once the fee has been taken.
+        uint256 _leftoverTransferAmount = _withdrawnAmount - _feeAmount;
+
+        // Transfer any remaining balance to the project owner.
+        if (_leftoverTransferAmount > 0)
+            // Send the funds to the beneficiary.
+            Address.sendValue(_beneficiary, _leftoverTransferAmount);
 
         emit UseAllowance(
-            _projectId,
+            _fundingCycle.number,
             _fundingCycle.configured,
-            _withdrawnAmount,
+            _projectId,
             _beneficiary,
+            _withdrawnAmount,
+            _feeAmount,
+            _leftoverTransferAmount,
             msg.sender
         );
     }

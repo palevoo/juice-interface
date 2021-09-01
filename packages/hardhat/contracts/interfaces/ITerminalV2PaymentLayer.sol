@@ -39,17 +39,20 @@ interface ITerminalV2PaymentLayer {
         address projectOwner,
         uint256 amount,
         uint256 tappedAmount,
-        uint256 govFeeAmount,
+        uint256 feeAmount,
         uint256 projectOwnerTransferAmount,
         string memo,
         address caller
     );
 
     event UseAllowance(
-        uint256 indexed projectId,
+        uint256 indexed fundingCycleNumber,
         uint256 indexed configuration,
-        uint256 amount,
+        uint256 indexed projectId,
         address beneficiary,
+        uint256 amount,
+        uint256 feeAmount,
+        uint256 transferAmount,
         address caller
     );
 

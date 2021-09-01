@@ -87,6 +87,8 @@ interface ITerminalV2DataLayer {
 
     function paymentLayer() external view returns (ITerminalV2PaymentLayer);
 
+    function fee() external view returns (uint256);
+
     function balanceOf(uint256 _projectId) external view returns (uint256);
 
     function overflowAllowanceOf(uint256 _projectId, uint256 _configuration)

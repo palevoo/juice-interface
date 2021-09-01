@@ -81,16 +81,19 @@ contract TerminalV2DataLayer is
     /// @notice The amount of ETH that each project has.
     mapping(uint256 => uint256) public override balanceOf;
 
-    // Whether or not a particular contract is available for projects to migrate their funds to.
+    /// @notice Whether or not a particular contract is available for projects to migrate their funds to.
     mapping(ITerminal => bool) public override migrationIsAllowed;
 
-    // The amount of overflow that a project is allowed to tap into on-demand.
+    /// @notice The amount of overflow that a project is allowed to tap into on-demand.
     mapping(uint256 => mapping(uint256 => uint256))
         public
         override overflowAllowanceOf;
 
     /// @notice The contract that stores funds, and manages inflows/outflows.
     ITerminalV2PaymentLayer public override paymentLayer;
+
+    /// @notice The platform fee percent. Out of 200.
+    uint256 public override fee = 10;
 
     // --- external views --- //
 
@@ -261,7 +264,7 @@ contract TerminalV2DataLayer is
             _projectId,
             _properties,
             _packedMetadata,
-            10, // Fee fixed at 5% (number is out of 200)
+            fee,
             true // configure the active funding cycle. This property shouldn't matter since the project shouldn't yet have a funding cycle.
         );
 
@@ -372,7 +375,7 @@ contract TerminalV2DataLayer is
             _projectId,
             _properties,
             _packedMetadata,
-            10, // fee fixed at 10
+            fee,
             _shouldConfigureActive
         );
 
