@@ -1,26 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-
 import "@paulrberg/contracts/math/PRBMath.sol";
 import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 
-import "./interfaces/IGovernable.sol";
-import "./interfaces/ITerminalDataLayer.sol";
-import "./interfaces/ITerminalV2DataLayer.sol";
-
-import "./abstract/JuiceboxProject.sol";
-import "./abstract/Operatable.sol";
-
 import "./libraries/Operations.sol";
 import "./libraries/Operations2.sol";
+import "./libraries/SplitsGroups.sol";
 import "./libraries/FundingCycleMetadataResolver.sol";
+
+// Inheritance
+import "./interfaces/ITerminalV2DataLayer.sol";
+import "./interfaces/ITerminalDataLayer.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "./abstract/Operatable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
   @notice 
-  This contract stiches together funding cycles and community tokens. It makes sure all activity is accounted for and correct. 
+  This contract stiches together funding cycles and treasury tokens. It makes sure all activity is accounted for and correct. 
 
   @dev 
   Each project can only have one terminal registered at a time with the TerminalDirectory. This is how the outside world knows where to send money to when trying to pay a project.
@@ -58,9 +56,6 @@ contract TerminalV2DataLayer is
     // still need to have reserves minted against them.
     mapping(uint256 => int256) private _processedTokenTrackerOf;
 
-    // The amount of tokens printed prior to a project configuring their first funding cycle and receiving a payment.
-    mapping(uint256 => uint256) private _preconfigureTokenCountOf;
-
     // --- public immutable stored properties --- //
 
     /// @notice The Projects contract which mints ERC-721's that represent project ownership.
@@ -72,8 +67,8 @@ contract TerminalV2DataLayer is
     /// @notice The contract that manages token minting and burning.
     ITicketBooth public immutable override ticketBooth;
 
-    /// @notice The contract that stores split modules for each project.
-    IModStore public immutable override modStore;
+    /// @notice The contract that stores splits for each project.
+    ISplitsStore public immutable override splitsStore;
 
     /// @notice The contract that exposes price feeds.
     IPrices public immutable override prices;
@@ -169,41 +164,14 @@ contract TerminalV2DataLayer is
             );
     }
 
-    // --- public views --- //
-
-    /**
-      @notice
-      Whether or not a project can still mint premined tokens.
-
-      @param _projectId The ID of the project to get the status of.
-
-      @return Boolean flag.
-    */
-    function canMintPreminedTokens(uint256 _projectId)
-        public
-        view
-        override
-        returns (bool)
-    {
-        return
-            // The total supply of tokens must equal the preconfigured token count.
-            ticketBooth.totalSupplyOf(_projectId) ==
-            _preconfigureTokenCountOf[_projectId] &&
-            // The above condition is still possible after post-configured tokens have been printed due to token redeeming.
-            // The only case when the processedTokenTracker is 0 is before redeeming and before minting reserved tokens.
-            _processedTokenTrackerOf[_projectId] >= 0 &&
-            uint256(_processedTokenTrackerOf[_projectId]) ==
-            _preconfigureTokenCountOf[_projectId];
-    }
-
-    // --- external transactions --- //
+    // --- constructor --- //
 
     /**
       @param _operatorStore A contract storing operator assignments.
       @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
       @param _fundingCycles The contract storing all funding cycle configurations.
       @param _ticketBooth The contract that manages token minting and burning.
-      @param _modStore The contract that stores split modules for each project.
+      @param _splitsStore The contract that stores splits for each project.
       @param _prices The contract that exposes price feeds.
       @param _terminalDirectory The directory of terminals.
     */
@@ -212,21 +180,23 @@ contract TerminalV2DataLayer is
         IProjects _projects,
         IFundingCycles _fundingCycles,
         ITicketBooth _ticketBooth,
-        IModStore _modStore,
+        ISplitsStore _splitsStore,
         IPrices _prices,
         ITerminalDirectory _terminalDirectory
     ) Operatable(_operatorStore) {
         projects = _projects;
         fundingCycles = _fundingCycles;
         ticketBooth = _ticketBooth;
-        modStore = _modStore;
+        splitsStore = _splitsStore;
         prices = _prices;
         terminalDirectory = _terminalDirectory;
     }
 
+    // --- external transactions --- //
+
     /**
       @notice
-      Creates a project. This will mint an ERC-721 into the `_owner`'s account, configure a first funding cycle, and set up any split modules.
+      Creates a project. This will mint an ERC-721 into the `_owner`'s account, configure a first funding cycle, and set up any splits.
 
       @dev
       Each operation withing this transaction can be done in sequence separately.
@@ -252,7 +222,7 @@ contract TerminalV2DataLayer is
           There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
         @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
       @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
-        @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token split modules.
+        @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token splits.
         @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _redemptionRate.
@@ -264,8 +234,8 @@ contract TerminalV2DataLayer is
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
       @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
-      @param _payoutMods Any payout split modules to set.
-      @param _tokenMods Any token split modules to set.
+      @param _payoutSplits Any payout splits to set.
+      @param _reservedTokenSplits Any token splits to set.
     */
     function launchProject(
         address _owner,
@@ -274,8 +244,8 @@ contract TerminalV2DataLayer is
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
         uint256 _overflowAllowance,
-        PayoutMod[] memory _payoutMods,
-        TicketMod[] memory _tokenMods
+        Split[] memory _payoutSplits,
+        Split[] memory _reservedTokenSplits
     ) external override {
         // Make sure the metadata is validated and packed into a uint256.
         uint256 _packedMetadata = _validateAndPackFundingCycleMetadata(
@@ -295,20 +265,22 @@ contract TerminalV2DataLayer is
             true // configure the active funding cycle. This property shouldn't matter since the project shouldn't yet have a funding cycle.
         );
 
-        // Set payout split modules if there are any.
-        if (_payoutMods.length > 0)
-            modStore.setPayoutMods(
+        // Set payout splits if there are any.
+        if (_payoutSplits.length > 0)
+            splitsStore.set(
                 _projectId,
                 _fundingCycle.configured,
-                _payoutMods
+                SplitsGroups.Payouts,
+                _payoutSplits
             );
 
-        // Set token split modules if there are any.
-        if (_tokenMods.length > 0)
-            modStore.setTicketMods(
+        // Set token splits if there are any.
+        if (_reservedTokenSplits.length > 0)
+            splitsStore.set(
                 _projectId,
                 _fundingCycle.configured,
-                _tokenMods
+                SplitsGroups.ReservedTokens,
+                _reservedTokenSplits
             );
 
         // Set the overflow allowance if the value is different from the currently set value.
@@ -345,7 +317,7 @@ contract TerminalV2DataLayer is
           There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
         @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
       @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
-        @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token split modules.
+        @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token splits.
         @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _redemptionRate.
@@ -357,8 +329,8 @@ contract TerminalV2DataLayer is
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
       @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
-      @param _payoutMods Any payout split modules to set.
-      @param _tokenMods Any token split modules to set.
+      @param _payoutSplits Any payout splits to set.
+      @param _reservedTokenSplits Any token splits to set.
 
       @return The ID of the funding cycle that was successfully configured.
     */
@@ -367,8 +339,8 @@ contract TerminalV2DataLayer is
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
         uint256 _overflowAllowance,
-        PayoutMod[] memory _payoutMods,
-        TicketMod[] memory _tokenMods
+        Split[] memory _payoutSplits,
+        Split[] memory _reservedTokenSplits
     )
         external
         override
@@ -391,8 +363,9 @@ contract TerminalV2DataLayer is
             ticketBooth.totalSupplyOf(_projectId)
         ) _distributeReservedTokens(_projectId, "");
 
-        // If the project can still mint premined tokens, configure the active funding cycle instead of queuing one for after the active one expires.
-        bool _shouldConfigureActive = canMintPreminedTokens(_projectId);
+        // Configure the active project if its tokens have yet to be minted.
+        bool _shouldConfigureActive = ticketBooth.totalSupplyOf(_projectId) ==
+            0;
 
         // Configure the funding cycle's properties.
         FundingCycle memory _fundingCycle = fundingCycles.configure(
@@ -403,20 +376,22 @@ contract TerminalV2DataLayer is
             _shouldConfigureActive
         );
 
-        // Set payout split modules if there are any.
-        if (_payoutMods.length > 0)
-            modStore.setPayoutMods(
+        // Set payout splits if there are any.
+        if (_payoutSplits.length > 0)
+            splitsStore.set(
                 _projectId,
                 _fundingCycle.configured,
-                _payoutMods
+                SplitsGroups.Payouts,
+                _payoutSplits
             );
 
-        // Set token split modules if there are any.
-        if (_tokenMods.length > 0)
-            modStore.setTicketMods(
+        // Set token splits if there are any.
+        if (_reservedTokenSplits.length > 0)
+            splitsStore.set(
                 _projectId,
                 _fundingCycle.configured,
-                _tokenMods
+                SplitsGroups.ReservedTokens,
+                _reservedTokenSplits
             );
 
         // Set the overflow allowance if the value is different from the currently set value.
@@ -431,91 +406,6 @@ contract TerminalV2DataLayer is
             );
 
         return _fundingCycle.id;
-    }
-
-    /**
-      @notice
-      Allows a project to mint tokens for a specified beneficiary before it has started receiving payments.
-
-      @dev
-      This can only be done if the project hasn't yet received a payment after configuring a funding cycle.
-
-      @dev
-      Only a project's owner or a designated operator can mint premined tokens.
-
-      @param _projectId The ID of the project to premine tokens for.
-      @param _amount The amount to base the token premine off of, in wei (10^18)
-      @param _currency The currency of the amount to base the token premine off of. Send 0 for ETH or 1 for USD.
-      @param _weight The number of tokens minted per ETH amount specified is determined by the weight. If this is left at 0, the BASE_WEIGHT of the first funding cycle is used (10^24, 18 decimals). 
-        For example, if the `_currency` specified is ETH and the `_weight` specified is 10^20, then an `_amount` of 1 ETH (sent as 10^18) will mint 100 tokens.
-      @param _beneficiary The address to send the minted tokens to.
-      @param _memo A memo to leave with the emitted event.
-      @param _preferUnstakedTokens If there is a preference to unstake the minted tokens.
-    */
-    function mintPreminedTokens(
-        uint256 _projectId,
-        uint256 _amount,
-        uint256 _currency,
-        uint256 _weight,
-        address _beneficiary,
-        string memory _memo,
-        bool _preferUnstakedTokens
-    )
-        external
-        override
-        nonReentrant
-        requirePermission(
-            projects.ownerOf(_projectId),
-            _projectId,
-            Operations.PrintPreminedTickets
-        )
-    {
-        // Can't send to the zero address.
-        require(_beneficiary != address(0), "TV2DL::MPT: ZERO_ADDRESS");
-
-        // Make sure the project can mint tokens.
-        require(
-            canMintPreminedTokens(_projectId),
-            "TV2DL::MPT: ALREADY_ACTIVE"
-        );
-
-        // If a weight isn't specified, get the current funding cycle to read the weight from.
-        _weight = _weight > 0 ? _weight : fundingCycles.BASE_WEIGHT();
-
-        // Multiply the amount with the weight to determine the number of tokens to mint.
-        uint256 _weightedAmount = PRBMathUD60x18.mul(
-            PRBMathUD60x18.div(_amount, prices.getETHPriceFor(_currency)),
-            _weight
-        );
-
-        // Set the preconfigure tokens as processed so that reserved tokens cant be minted against them.
-        _processedTokenTrackerOf[_projectId] =
-            _processedTokenTrackerOf[_projectId] +
-            int256(_weightedAmount);
-
-        // Set the count of preconfigure tokens this project has printed.
-        _preconfigureTokenCountOf[_projectId] =
-            _preconfigureTokenCountOf[_projectId] +
-            _weightedAmount;
-
-        // Mint the project's tokens for the beneficiary.
-        ticketBooth.print(
-            _beneficiary,
-            _projectId,
-            _weightedAmount,
-            _preferUnstakedTokens
-        );
-
-        emit MintPreminedTokens(
-            _projectId,
-            _beneficiary,
-            _amount,
-            _weight,
-            _weightedAmount,
-            _currency,
-            _memo,
-            msg.sender
-        );
     }
 
     /**
@@ -548,6 +438,152 @@ contract TerminalV2DataLayer is
                 _preferUnstakedTokens
             );
     }
+
+    /**
+      @notice
+      Mints and distributes all outstanding reserved tokens for a project.
+
+      @param _projectId The ID of the project to which the reserved tokens belong.
+      @param _memo A memo to leave with the emitted event.
+
+      @return The amount of reserved tokens that were minted.
+    */
+    function distributeReservedTokens(uint256 _projectId, string memory _memo)
+        external
+        override
+        nonReentrant
+        returns (uint256)
+    {
+        return _distributeReservedTokens(_projectId, _memo);
+    }
+
+    /**
+      @notice
+      Mint new token supply into an account.
+
+      @dev
+      Only a project's owner or a designated operator can mint it.
+
+      @param _projectId The ID of the project to which the tokens being burned belong.
+      @param _amount The amount to base the token mint off of, in wei (10^18)
+      @param _currency The currency of the amount to base the token mint off of. Send 0 for ETH or 1 for USD.
+      @param _weight The number of tokens minted per ETH amount specified is determined by the weight. If this is left at 0, the weight of the current funding cycle is used (10^24, 18 decimals). 
+        For example, if the `_currency` specified is ETH and the `_weight` specified is 10^20, then an `_amount` of 1 ETH (sent as 10^18) will mint 100 tokens.
+      @param _beneficiary The account that the tokens are being minted for.
+      @param _memo A memo to pass along to the emitted event.
+      @param _preferUnstakedTokens Whether ERC20's should be burned first if they have been issued.
+
+      @return tokenCount The amount of tokens minted.
+    */
+    function mintTokens(
+        uint256 _projectId,
+        uint256 _amount,
+        uint256 _currency,
+        uint256 _weight,
+        address _beneficiary,
+        string calldata _memo,
+        bool _preferUnstakedTokens
+    )
+        external
+        override
+        nonReentrant
+        requirePermission(
+            projects.ownerOf(_projectId),
+            _projectId,
+            Operations2.Mint
+        )
+        returns (uint256 tokenCount)
+    {
+        // Can't send to the zero address.
+        require(_beneficiary != address(0), "TV2DL::MT: ZERO_ADDRESS");
+
+        // There should be tokens to mint.
+        require(_amount > 0, "TV2DL::MT: NO_OP");
+
+        // Get a reference to the project's current funding cycle.
+        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+
+        // If a weight isn't specified, get the current funding cycle to read the weight from. If there's no current funding cycle, use the base weight.
+        _weight = _weight > 0 ? _weight : _fundingCycle.number > 0
+            ? _fundingCycle.weight
+            : fundingCycles.BASE_WEIGHT();
+
+        // Multiply the amount with the weight to determine the number of tokens to mint.
+        tokenCount = PRBMathUD60x18.mul(
+            PRBMathUD60x18.div(_amount, prices.getETHPriceFor(_currency)),
+            _weight
+        );
+
+        // Set the minted tokens as processed so that reserved tokens cant be minted against them.
+        _processedTokenTrackerOf[_projectId] =
+            _processedTokenTrackerOf[_projectId] +
+            int256(tokenCount);
+
+        // Redeem the tokens, which burns them.
+        ticketBooth.print(
+            _beneficiary,
+            _projectId,
+            tokenCount,
+            _preferUnstakedTokens
+        );
+
+        emit Mint(
+            _beneficiary,
+            _projectId,
+            _amount,
+            _currency,
+            _weight,
+            tokenCount,
+            _memo,
+            msg.sender
+        );
+    }
+
+    /**
+      @notice
+      Burns a token holder's supply.
+
+      @dev
+      Only a token's holder or a designated operator can burn it.
+
+      @param _holder The account that is having its tokens burned.
+      @param _projectId The ID of the project to which the tokens being burned belong.
+      @param _tokenCount The number of tokens to burn.
+      @param _memo A memo to pass along to the emitted event.
+      @param _preferUnstakedTokens Whether ERC20's should be burned first if they have been issued.
+
+    */
+    function burnTokens(
+        address _holder,
+        uint256 _projectId,
+        uint256 _tokenCount,
+        string calldata _memo,
+        bool _preferUnstakedTokens
+    )
+        external
+        override
+        nonReentrant
+        requirePermissionAllowingWildcardDomain(
+            _holder,
+            _projectId,
+            Operations2.Burn
+        )
+    {
+        // There should be tokens to burn
+        require(_tokenCount > 0, "TV2DL::BT: NO_OP");
+        // Update the token tracker so that reserved tokens will still be correctly mintable.
+        _subtractFromTokenTracker(_projectId, _tokenCount);
+        // Redeem the tokens, which burns them.
+        ticketBooth.redeem(
+            _holder,
+            _projectId,
+            _tokenCount,
+            _preferUnstakedTokens
+        );
+        emit Burn(_holder, _projectId, _tokenCount, _memo, msg.sender);
+    }
+
+    // --- ristricted external transactions --- //
 
     /**
       @notice
@@ -612,6 +648,7 @@ contract TerminalV2DataLayer is
                 _payer,
                 _amount,
                 fundingCycle.weight,
+                fundingCycle.reservedRate(),
                 _beneficiary,
                 _memo
             );
@@ -895,68 +932,6 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Mints and distributes all outstanding reserved tokens for a project.
-
-      @param _projectId The ID of the project to which the reserved tokens belong.
-      @param _memo A memo to leave with the emitted event.
-
-      @return The amount of reserved tokens that were minted.
-    */
-    function distributeReservedTokens(uint256 _projectId, string memory _memo)
-        external
-        override
-        nonReentrant
-        returns (uint256)
-    {
-        return _distributeReservedTokens(_projectId, _memo);
-    }
-
-    /**
-      @notice
-      Burns a token holder's supply.
-
-      @dev
-      Only a token's holder or a designated operator can migrate it.
-
-      @param _holder The account that is having its tokens burned.
-      @param _projectId The ID of the project to which the tokens being burned belong.
-      @param _tokenCount The number of tokens to burn.
-      @param _memo A memo to pass along to the emitted event.
-      @param _preferUnstakedTokens Whether ERC20's should be burned first if they have been issued.
-
-    */
-    function burnTokens(
-        address _holder,
-        uint256 _projectId,
-        uint256 _tokenCount,
-        string calldata _memo,
-        bool _preferUnstakedTokens
-    )
-        external
-        override
-        nonReentrant
-        requirePermissionAllowingWildcardDomain(
-            _holder,
-            _projectId,
-            Operations2.Burn
-        )
-    {
-        // There should be tokens to burn
-        require(_tokenCount > 0, "TV2DL::BT: NO_OP");
-        // Update the token tracker so that reserved tokens will still be correctly mintable.
-        _subtractFromTokenTracker(_projectId, _tokenCount);
-        // Redeem the tokens, which burns them.
-        ticketBooth.redeem(
-            _holder,
-            _projectId,
-            _tokenCount,
-            _preferUnstakedTokens
-        );
-        emit Burn(_holder, _projectId, _tokenCount, _memo, msg.sender);
-    }
-
-    /**
-      @notice
       Allows a project owner to migrate its funds and treasury operations to a new contract.
 
       @dev
@@ -1172,10 +1147,10 @@ contract TerminalV2DataLayer is
         // Get a reference to the project owner.
         address _owner = projects.ownerOf(_projectId);
 
-        // Distribute tokens to split modules and get a reference to the leftover amount to mint after all mods have gotten their share.
+        // Distribute tokens to splits and get a reference to the leftover amount to mint after all splits have gotten their share.
         uint256 _leftoverTokenCount = count == 0
             ? 0
-            : _distributeToTokenMods(_fundingCycle, count);
+            : _distributeToReservedTokenSplits(_fundingCycle, count);
 
         // Mint any leftover tokens to the project owner.
         if (_leftoverTokenCount > 0)
@@ -1294,51 +1269,70 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Distributed tokens to the split modules according to the specified funding cycle configuration.
+      Distributed tokens to the splits according to the specified funding cycle configuration.
 
       @param _fundingCycle The funding cycle to base the token distribution on.
       @param _amount The total amount of tokens to mint.
 
-      @return leftoverAmount If the split module percents dont add up to 100%, the leftover amount is returned.
+      @return leftoverAmount If the splits percents dont add up to 100%, the leftover amount is returned.
     */
-    function _distributeToTokenMods(
+    function _distributeToReservedTokenSplits(
         FundingCycle memory _fundingCycle,
         uint256 _amount
     ) private returns (uint256 leftoverAmount) {
         // Set the leftover amount to the initial amount.
         leftoverAmount = _amount;
 
-        // Get a reference to the project's token modules.
-        TicketMod[] memory _mods = modStore.ticketModsOf(
+        // Get a reference to the project's reserved token splits.
+        Split[] memory _splits = splitsStore.get(
             _fundingCycle.projectId,
-            _fundingCycle.configured
+            _fundingCycle.configured,
+            SplitsGroups.ReservedTokens
         );
 
-        //Transfer between all mods.
-        for (uint256 _i = 0; _i < _mods.length; _i++) {
-            // Get a reference to the mod being iterated on.
-            TicketMod memory _mod = _mods[_i];
+        //Transfer between all splits.
+        for (uint256 _i = 0; _i < _splits.length; _i++) {
+            // Get a reference to the split being iterated on.
+            Split memory _split = _splits[_i];
 
-            // The amount to send towards mods. Mods percents are out of 10000.
-            uint256 _tokenCount = PRBMath.mulDiv(_amount, _mod.percent, 10000);
+            // The amount to send towards the split. Split percents are out of 10000.
+            uint256 _tokenCount = PRBMath.mulDiv(
+                _amount,
+                _split.percent,
+                10000
+            );
 
-            // Mints tokens for the module if needed.
+            // Mints tokens for the split if needed.
             if (_tokenCount > 0)
                 ticketBooth.print(
-                    _mod.beneficiary,
+                    // If a projectId is set in the split, set the project's owner as the beneficiary.
+                    // Otherwise use the split's beneficiary.
+                    _split.projectId != 0
+                        ? projects.ownerOf(_split.projectId)
+                        : _split.beneficiary,
                     _fundingCycle.projectId,
                     _tokenCount,
-                    _mod.preferUnstaked
+                    _split.preferUnstaked
+                );
+
+            // If there's an allocator set, trigger its `allocate` function.
+            if (_split.allocator != ISplitAllocator(address(0)))
+                _split.allocator.allocate(
+                    _tokenCount,
+                    _fundingCycle.projectId,
+                    _split.projectId,
+                    _split.beneficiary,
+                    _split.preferUnstaked
                 );
 
             // Subtract from the amount to be sent to the beneficiary.
             leftoverAmount = leftoverAmount - _tokenCount;
 
-            emit DistributeToTokenMod(
+            emit DistributeToReservedTokenSplit(
                 _fundingCycle.number,
                 _fundingCycle.id,
                 _fundingCycle.projectId,
-                _mod,
+                _split,
                 _tokenCount,
                 msg.sender
             );

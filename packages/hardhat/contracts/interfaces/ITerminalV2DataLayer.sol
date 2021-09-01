@@ -8,7 +8,7 @@ import "./IFundingCycles.sol";
 import "./IFundingCycleDataSource.sol";
 import "./IYielder.sol";
 import "./IProjects.sol";
-import "./IModStore.sol";
+import "./ISplitsStore.sol";
 import "./ITerminal.sol";
 import "./IOperatorStore.sol";
 import "./ITerminalV2PaymentLayer.sol";
@@ -43,27 +43,27 @@ interface ITerminalV2DataLayer {
         address caller
     );
 
-    event DistributeToTokenMod(
+    event DistributeToReservedTokenSplit(
         uint256 indexed fundingCycleNumber,
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
-        TicketMod mod,
+        Split split,
         uint256 tokenCount,
         address caller
     );
 
-    event MintPreminedTokens(
-        uint256 indexed projectId,
+    event AllowMigration(ITerminal terminal);
+
+    event Mint(
         address indexed beneficiary,
+        uint256 indexed projectId,
         uint256 amount,
-        uint256 weight,
-        uint256 weightedAmount,
         uint256 currency,
+        uint256 weight,
+        uint256 count,
         string memo,
         address caller
     );
-
-    event AllowMigration(ITerminal terminal);
 
     event Burn(
         address indexed holder,
@@ -81,7 +81,7 @@ interface ITerminalV2DataLayer {
 
     function prices() external view returns (IPrices);
 
-    function modStore() external view returns (IModStore);
+    function splitsStore() external view returns (ISplitsStore);
 
     function projects() external view returns (IProjects);
 
@@ -93,11 +93,6 @@ interface ITerminalV2DataLayer {
         external
         view
         returns (uint256);
-
-    function canMintPreminedTokens(uint256 _projectId)
-        external
-        view
-        returns (bool);
 
     function currentOverflowOf(uint256 _projectId)
         external
@@ -114,16 +109,6 @@ interface ITerminalV2DataLayer {
         view
         returns (uint256);
 
-    function mintPreminedTokens(
-        uint256 _projectId,
-        uint256 _amount,
-        uint256 _currency,
-        uint256 _weight,
-        address _beneficiary,
-        string memory _memo,
-        bool _preferUnstakedTokens
-    ) external;
-
     function launchProject(
         address _owner,
         bytes32 _handle,
@@ -131,8 +116,8 @@ interface ITerminalV2DataLayer {
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
         uint256 _overflowAllowance,
-        PayoutMod[] memory _payoutMods,
-        TicketMod[] memory _ticketMods
+        Split[] memory _payoutSplits,
+        Split[] memory _reservedTokenSplits
     ) external;
 
     function reconfigureFundingCycles(
@@ -140,8 +125,8 @@ interface ITerminalV2DataLayer {
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
         uint256 _overflowAllowance,
-        PayoutMod[] memory _payoutMods,
-        TicketMod[] memory _ticketMods
+        Split[] memory _payoutSplits,
+        Split[] memory _reservedTokenSplits
     ) external returns (uint256);
 
     function recordAddedBalance(uint256 _amount, uint256 _projectId) external;
@@ -187,6 +172,16 @@ interface ITerminalV2DataLayer {
         string calldata _memo,
         bool _preferUnstakedTokens
     ) external;
+
+    function mintTokens(
+        uint256 _projectId,
+        uint256 _amount,
+        uint256 _currency,
+        uint256 _weight,
+        address _beneficiary,
+        string calldata _memo,
+        bool _preferUnstakedTokens
+    ) external returns (uint256 tokenCount);
 
     function recordPayment(
         address payer,

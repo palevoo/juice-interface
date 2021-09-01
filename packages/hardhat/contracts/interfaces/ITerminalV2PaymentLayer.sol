@@ -4,7 +4,7 @@ pragma solidity 0.8.6;
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./IProjects.sol";
-import "./IModStore.sol";
+import "./ISplitsStore.sol";
 import "./ITerminalDirectory.sol";
 import "./ITerminalV2DataLayer.sol";
 import "./ITerminalDataLayer.sol";
@@ -62,17 +62,18 @@ interface ITerminalV2PaymentLayer {
         string memo,
         address caller
     );
-    event DistributeToPayoutMod(
+    event DistributeToPayoutSplit(
+        uint256 indexed fundingCycleNumber,
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
-        PayoutMod mod,
+        Split split,
         uint256 amount,
         address caller
     );
 
     function projects() external view returns (IProjects);
 
-    function modStore() external view returns (IModStore);
+    function splitsStore() external view returns (ISplitsStore);
 
     function terminalDirectory() external view returns (ITerminalDirectory);
 

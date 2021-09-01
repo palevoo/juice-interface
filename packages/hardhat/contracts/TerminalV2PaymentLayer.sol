@@ -1,25 +1,33 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 import "@paulrberg/contracts/math/PRBMath.sol";
 
-import "./interfaces/ITerminalV2PaymentLayer.sol";
-
 import "./abstract/JuiceboxProject.sol";
-import "./abstract/Operatable.sol";
 
 import "./libraries/Operations.sol";
 import "./libraries/Operations2.sol";
+import "./libraries/SplitsGroups.sol";
+
+// Inheritance
+import "./interfaces/ITerminalV2PaymentLayer.sol";
+import "./abstract/Operatable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
   @notice 
-  This contract manages the Juicebox ecosystem, serves as a payment terminal, and custodies all funds.
+  This contract manages all inflows and outflows of funds into the Juicebox ecosystem. It stores all treasury funds for all projects.
 
   @dev 
   A project can transfer its funds, along with the power to reconfigure and mint/burn their Tickets, from this contract to another allowed terminal contract at any time.
+
+  Inherits from:
+
+  ITerminalV2PaymentLayer - general interface for the methods in this contract that send and receive funds according to the Juicebox protocol's rules.
+  Operatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
+  ReentrencyGuard - several function in this contract shouldn't be accessible recursively.
 */
 contract TerminalV2PaymentLayer is
     ITerminalV2PaymentLayer,
@@ -31,32 +39,33 @@ contract TerminalV2PaymentLayer is
     /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
     IProjects public immutable override projects;
 
-    /// @notice The contract that stores mods for each project.
-    IModStore public immutable override modStore;
+    /// @notice The contract that stores splits for each project.
+    ISplitsStore public immutable override splitsStore;
 
     /// @notice The directory of terminals.
     ITerminalDirectory public immutable override terminalDirectory;
 
-    /// @notice The storage contract for this terminal.
+    /// @notice The contract that stiches together funding cycles and treasury tokens.
     ITerminalV2DataLayer public immutable override dataLayer;
 
     // --- external transactions --- //
 
     /** 
-      @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
       @param _operatorStore A contract storing operator assignments.
-      @param _modStore A storage for a project's mods.
-      @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
+      @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
+      @param _splitsStore The contract that stores splits for each project.
+      @param _terminalDirectory The directory of terminals.
+      @param _dataLayer The contract that stiches together funding cycles and treasury tokens.
     */
     constructor(
         IOperatorStore _operatorStore,
         IProjects _projects,
-        IModStore _modStore,
+        ISplitsStore _splitsStore,
         ITerminalDirectory _terminalDirectory,
         ITerminalV2DataLayer _dataLayer
     ) Operatable(_operatorStore) {
         projects = _projects;
-        modStore = _modStore;
+        splitsStore = _splitsStore;
         terminalDirectory = _terminalDirectory;
         dataLayer = _dataLayer;
     }
@@ -66,50 +75,48 @@ contract TerminalV2PaymentLayer is
       Contribute ETH to a project.
 
       @dev
-      Print's the project's tickets proportional to the amount of the contribution.
-
-      @dev
       The msg.value is the amount of the contribution in wei.
 
       @param _projectId The ID of the project being contribute to.
-      @param _beneficiary The address to print Tickets for.
-      @param _minReturnedTickets The minimum number of tickets expected in return.
-      @param _memo A memo that will be included in the published event.
-      @param _preferUnstakedTickets Whether ERC20's should be unstaked automatically if they have been issued.
+      @param _beneficiary The address to mint tokens for and pass along to the funding cycle's data source and delegate.
+      @param _minReturnedTokens The minimum number of tokens expected in return.
+      @param _memo A memo that will be included in the published event, and passed along the the funding cycle's data source and delegate.
+      @param _preferUnstakedTokens Whether tokens should be unstaked automatically if ERC20's have been issued.
 
       @return The number of the funding cycle that the payment was made during.
     */
     function pay(
         uint256 _projectId,
         address _beneficiary,
-        uint256 _minReturnedTickets,
+        uint256 _minReturnedTokens,
         string calldata _memo,
-        bool _preferUnstakedTickets
+        bool _preferUnstakedTokens
     ) external payable override returns (uint256) {
         return
             _pay(
                 msg.value,
                 _projectId,
                 _beneficiary,
-                _minReturnedTickets,
+                _minReturnedTokens,
                 _memo,
-                _preferUnstakedTickets
+                _preferUnstakedTokens
             );
     }
 
     /**
       @notice 
-      Tap into funds that have been contributed to a project's current funding cycle.
+      Distributes payouts for a project according to the constraints of its current funding cycle.
+      Payouts are sent to the preprogrammed splits. 
 
       @dev
-      Anyone can tap funds on a project's behalf.
+      Anyone can distribute payouts on a project's behalf.
 
-      @param _projectId The ID of the project to which the funding cycle being tapped belongs.
-      @param _amount The amount being tapped, in the funding cycle's currency.
-      @param _currency The expected currency being tapped.
+      @param _projectId The ID of the project having its payouts distributed.
+      @param _amount The amount being distributed.
+      @param _currency The expected currency of the amount being distributed. Must match the project's current funding cycle's currency.
       @param _minReturnedWei The minimum number of wei that the amount should be valued at.
 
-      @return The ID of the funding cycle that was tapped.
+      @return The ID of the funding cycle during which the distribution was made.
     */
     function distributePayouts(
         uint256 _projectId,
@@ -118,6 +125,7 @@ contract TerminalV2PaymentLayer is
         uint256 _minReturnedWei,
         string memory _memo
     ) external override nonReentrant returns (uint256) {
+        // Record the withdrawal in the data layer.
         (
             FundingCycle memory _fundingCycle,
             uint256 _withdrawnAmount
@@ -128,15 +136,16 @@ contract TerminalV2PaymentLayer is
                 _minReturnedWei
             );
 
-        // Get a reference to the project owner, which will receive the admin's tickets from paying the fee,
-        // and receive any extra tapped funds not allocated to mods.
+        // Get a reference to the project owner, which will receive tokens from paying the platform fee
+        // and receive any extra distributable funds not allocated to payout splits.
         address payable _projectOwner = payable(projects.ownerOf(_projectId));
 
         // Get a reference to the handle of the project paying the fee and sending payouts.
         bytes32 _handle = projects.handleOf(_projectId);
 
         // Take a fee from the _withdrawnAmount, if needed.
-        // The project's owner will be the beneficiary of the resulting printed tickets from the governance project.
+        // The project's owner will be the beneficiary of the resulting minted tokens from platform project.
+        // The platform project's ID is 1.
         uint256 _feeAmount = _fundingCycle.fee == 0 || _projectId == 1
             ? 0
             : _takeFee(
@@ -146,17 +155,15 @@ contract TerminalV2PaymentLayer is
                 string(bytes.concat("Fee from @", _handle))
             );
 
-        // Payout to mods and get a reference to the leftover transfer amount after all mods have been paid.
-        // The net transfer amount is the tapped amount minus the fee.
-        uint256 _leftoverTransferAmount = _distributeToPayoutMods(
-            _fundingCycle.id,
-            _fundingCycle.configured,
-            _projectId,
+        // Payout to splits and get a reference to the leftover transfer amount after all mods have been paid.
+        // The net transfer amount is the withdrawn amount minus the fee.
+        uint256 _leftoverTransferAmount = _distributeToPayoutSplits(
+            _fundingCycle,
             _withdrawnAmount - _feeAmount,
             string(bytes.concat("Payout from @", _handle))
         );
 
-        // Transfer any remaining balance to the beneficiary.
+        // Transfer any remaining balance to the project owner.
         if (_leftoverTransferAmount > 0)
             Address.sendValue(_projectOwner, _leftoverTransferAmount);
 
@@ -179,7 +186,7 @@ contract TerminalV2PaymentLayer is
       @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
       @param _projectId The ID of the project to use the allowance of.
       @param _amount The amount of the allowance to use.
-      @param _beneficiary The address to send the funds.
+      @param _beneficiary The address to send the funds to.
     */
     function useAllowance(
         uint256 _projectId,
@@ -197,6 +204,7 @@ contract TerminalV2PaymentLayer is
             Operations2.UseAllowance
         )
     {
+        // Record the use of the allowance in the data layer.
         (
             FundingCycle memory _fundingCycle,
             uint256 _withdrawnAmount
@@ -207,7 +215,7 @@ contract TerminalV2PaymentLayer is
                 _minReturnedWei
             );
 
-        // Otherwise, send the funds directly to the beneficiary.
+        // Send the funds to the beneficiary.
         Address.sendValue(_beneficiary, _withdrawnAmount);
 
         emit UseAllowance(
@@ -219,23 +227,23 @@ contract TerminalV2PaymentLayer is
         );
     }
 
-    // /**
-    //   @notice
-    //   Addresses can redeem their Tokens to claim the project's overflowed ETH.
+    /**
+      @notice
+      Addresses can redeem their tokens to claim the project's overflowed ETH, or to trigger rules determined by the project's current funding cycle's data source.
 
-    //   @dev
-    //   Only a token's holder or a designated operator can redeem it.
+      @dev
+      Only a token's holder or a designated operator can redeem it.
 
-    //   @param _holder The account to redeem tokens for.
-    //   @param _projectId The ID of the project to which the tokens being redeemed belong.
-    //   @param _tokenCount The number of tokens to redeem.
-    //   @param _minReturnedWei The minimum amount of Wei expected in return.
-    //   @param _beneficiary The address to send the ETH to. Send the address this contract to burn the count.
-    //   @param _memo A memo to attach to the emitted event.
-    //   @param _preferUnstaked If the preference is to redeem tokens that have been converted to ERC-20s.
+      @param _holder The account to redeem tokens for.
+      @param _projectId The ID of the project to which the tokens being redeemed belong.
+      @param _tokenCount The number of tokens to redeem.
+      @param _minReturnedWei The minimum amount of Wei expected in return.
+      @param _beneficiary The address to send the ETH to. Send the address this contract to burn the count.
+      @param _memo A memo to attach to the emitted event.
+      @param _preferUnstaked If the preference is to redeem tokens that have been converted to ERC-20s.
 
-    //   @return amount The amount of ETH that the tokens were redeemed for.
-    // */
+      @return amount The amount of ETH that the tokens were redeemed for, in wei.
+    */
     function redeemTokens(
         address _holder,
         uint256 _projectId,
@@ -255,9 +263,13 @@ contract TerminalV2PaymentLayer is
         )
         returns (uint256)
     {
+        // Keep a reference to the funding cycles during which the redemption is being made.
         FundingCycle memory _fundingCycle;
+
+        // Keep a reference to the amount being claimed.
         uint256 _claimAmount;
 
+        // Record the redemption in the data layer.
         (_fundingCycle, _claimAmount, _memo) = dataLayer.recordRedemption(
             _holder,
             _projectId,
@@ -269,15 +281,10 @@ contract TerminalV2PaymentLayer is
         );
 
         // Can't send claimed funds to the zero address.
-        require(
-            _claimAmount == 0 || _beneficiary != address(0),
-            "TerminalV2::redeem: ZERO_ADDRESS"
-        );
+        require(_beneficiary != address(0), "TerminalV2::redeem: ZERO_ADDRESS");
 
-        // Remove the redeemed funds from the project's balance.
-        if (_claimAmount > 0)
-            // Transfer funds to the specified address.
-            Address.sendValue(_beneficiary, _claimAmount);
+        // Send the claimed funds to the beneficiary.
+        if (_claimAmount > 0) Address.sendValue(_beneficiary, _claimAmount);
 
         emit Redeem(
             _holder,
@@ -294,13 +301,13 @@ contract TerminalV2PaymentLayer is
 
     /**
       @notice
-      Allows a project owner to migrate its funds and operations to a new contract.
+      Allows a project owner to migrate its funds and operations to a new terminal.
 
       @dev
       Only a project's owner or a designated operator can migrate it.
 
       @param _projectId The ID of the project being migrated.
-      @param _to The contract that will gain the project's funds.
+      @param _to The terminal contract that will gain the project's funds.
     */
     function migrate(uint256 _projectId, ITerminalDataLayer _to)
         external
@@ -312,8 +319,10 @@ contract TerminalV2PaymentLayer is
             Operations.Migrate
         )
     {
+        // Allow the terminal receiving the project's funds and operations to prepare for the migration.
         _to.prepForMigrationOf(_projectId);
 
+        // Record the migration in the data layer.
         uint256 _balance = dataLayer.recordMigration(_projectId, _to);
 
         // Move the funds to the new contract if needed.
@@ -324,12 +333,14 @@ contract TerminalV2PaymentLayer is
 
     /**
       @notice
-      Receives and allocates funds belonging to the specified project.
+      Receives and allocated funds belonging to the specified project.
 
       @param _projectId The ID of the project to which the funds received belong.
     */
     function addToBalance(uint256 _projectId) external payable override {
+        // Record the added funds in the data later.
         dataLayer.recordAddedBalance(msg.value, _projectId);
+
         emit AddToBalance(_projectId, msg.value, msg.sender);
     }
 
@@ -337,97 +348,103 @@ contract TerminalV2PaymentLayer is
 
     /** 
       @notice
-      Pays out the mods for the specified funding cycle.
+      Pays out the splits.
 
-      @param _fundingCycleId The ID of the funding cycle to base the distribution on.
-      @param _fundingCycleConfiguration The configuration of the funding cycle to base the distribution on.
-      @param _amount The total amount being paid out.
-      @param _memo A memo to send along with project payouts.
+      @param _fundingCycle The funding cycle during which the distribution is being made.
+      @param _amount The total amount being distributed.
+      @param _memo A memo to send along with emitted distribution events.
 
-      @return leftoverAmount If the mod percents dont add up to 100%, the leftover amount is returned.
+      @return leftoverAmount If the split module percents dont add up to 100%, the leftover amount is returned.
 
     */
-    function _distributeToPayoutMods(
-        uint256 _fundingCycleId,
-        uint256 _fundingCycleConfiguration,
-        uint256 _projectId,
+    function _distributeToPayoutSplits(
+        FundingCycle memory _fundingCycle,
         uint256 _amount,
         string memory _memo
     ) private returns (uint256 leftoverAmount) {
         // Set the leftover amount to the initial amount.
         leftoverAmount = _amount;
 
-        // Get a reference to the project's payout mods.
-        PayoutMod[] memory _mods = modStore.payoutModsOf(
-            _projectId,
-            _fundingCycleConfiguration
+        // Get a reference to the project's payout splits.
+        Split[] memory _splits = splitsStore.get(
+            _fundingCycle.projectId,
+            _fundingCycle.configured,
+            SplitsGroups.Payouts
         );
 
-        if (_mods.length == 0) return leftoverAmount;
+        // If there are no splits, return the full leftover amount.
+        if (_splits.length == 0) return leftoverAmount;
 
-        //Transfer between all mods.
-        for (uint256 _i = 0; _i < _mods.length; _i++) {
+        //Transfer between all splits.
+        for (uint256 _i = 0; _i < _splits.length; _i++) {
             // Get a reference to the mod being iterated on.
-            PayoutMod memory _mod = _mods[_i];
+            Split memory _split = _splits[_i];
 
             // The amount to send towards mods. Mods percents are out of 10000.
-            uint256 _modCut = PRBMath.mulDiv(_amount, _mod.percent, 10000);
+            uint256 _payoutAmount = PRBMath.mulDiv(
+                _amount,
+                _split.percent,
+                10000
+            );
 
-            if (_modCut > 0) {
+            if (_payoutAmount > 0) {
                 // Transfer ETH to the mod.
                 // If there's an allocator set, transfer to its `allocate` function.
-                if (_mod.allocator != IModAllocator(address(0))) {
-                    _mod.allocator.allocate{value: _modCut}(
-                        _projectId,
-                        _mod.projectId,
-                        _mod.beneficiary
+                if (_split.allocator != ISplitAllocator(address(0))) {
+                    _split.allocator.allocate{value: _payoutAmount}(
+                        _payoutAmount,
+                        _fundingCycle.projectId,
+                        _split.projectId,
+                        _split.beneficiary,
+                        _split.preferUnstaked
                     );
-                } else if (_mod.projectId != 0) {
+                } else if (_split.projectId != 0) {
                     // Otherwise, if a project is specified, make a payment to it.
 
                     // Get a reference to the Juicebox terminal being used.
                     ITerminal _terminal = terminalDirectory.terminalOf(
-                        _mod.projectId
+                        _split.projectId
                     );
 
                     // The project must have a terminal to send funds to.
                     require(
                         _terminal != ITerminal(address(0)),
-                        "TerminalV2::_distributeToPayoutMods: BAD_MOD"
+                        "TerminalV2::_distributeToPayoutSplits: BAD_MOD"
                     );
 
                     // Save gas if this contract is being used as the terminal.
                     if (address(_terminal) == address(dataLayer)) {
                         _pay(
-                            _modCut,
-                            _mod.projectId,
-                            _mod.beneficiary,
+                            _payoutAmount,
+                            _split.projectId,
+                            _split.beneficiary,
                             0,
                             _memo,
-                            _mod.preferUnstaked
+                            _split.preferUnstaked
                         );
                     } else {
-                        _terminal.pay{value: _modCut}(
-                            _mod.projectId,
-                            _mod.beneficiary,
+                        _terminal.pay{value: _payoutAmount}(
+                            _split.projectId,
+                            _split.beneficiary,
                             _memo,
-                            _mod.preferUnstaked
+                            _split.preferUnstaked
                         );
                     }
                 } else {
                     // Otherwise, send the funds directly to the beneficiary.
-                    Address.sendValue(_mod.beneficiary, _modCut);
+                    Address.sendValue(_split.beneficiary, _payoutAmount);
                 }
 
                 // Subtract from the amount to be sent to the beneficiary.
-                leftoverAmount = leftoverAmount - _modCut;
+                leftoverAmount = leftoverAmount - _payoutAmount;
             }
 
-            emit DistributeToPayoutMod(
-                _fundingCycleId,
-                _projectId,
-                _mod,
-                _modCut,
+            emit DistributeToPayoutSplit(
+                _fundingCycle.number,
+                _fundingCycle.id,
+                _fundingCycle.projectId,
+                _split,
+                _payoutAmount,
                 msg.sender
             );
         }
@@ -435,7 +452,7 @@ contract TerminalV2PaymentLayer is
 
     /** 
       @notice 
-      Takes a fee into the juiceboxDAO's project, which has an id of 1.
+      Takes a fee into the platform's project, which has an id of 1.
 
       @param _from The amount to take a fee from.
       @param _percent The percent fee to take. Out of 200.
@@ -487,6 +504,7 @@ contract TerminalV2PaymentLayer is
         uint256 _weight;
         uint256 _tokenCount;
 
+        // Record the payment in the data layer.
         (_fundingCycle, _weight, _tokenCount, _memo) = dataLayer.recordPayment(
             msg.sender,
             _amount,

@@ -11,6 +11,7 @@ interface IFundingCycleDataSource {
         address _payer,
         uint256 _amount,
         uint256 _baseWeight,
+        uint256 _reservedRate,
         address _beneficiary,
         string calldata _memo
     )
