@@ -12,8 +12,8 @@ import "./libraries/FundingCycleMetadataResolver.sol";
 // Inheritance
 import "./interfaces/ITerminalV2DataLayer.sol";
 import "./interfaces/ITerminalDataLayer.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "./abstract/Operatable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
@@ -38,8 +38,8 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 contract TerminalV2DataLayer is
     ITerminalV2DataLayer,
     ITerminalDataLayer,
-    Ownable,
     Operatable,
+    Ownable,
     ReentrancyGuard
 {
     // A library that parses the packed funding cycle metadata into a more friendly format.
@@ -224,7 +224,7 @@ contract TerminalV2DataLayer is
           If the number is 200 (20%), the difference will be 20%. 
           There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
         @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
-      @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
+      @param _metadata A struct specifying the TerminalV2 specific params.
         @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token splits.
         @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
@@ -293,7 +293,7 @@ contract TerminalV2DataLayer is
           If the number is 200 (20%), the difference will be 20%. 
           There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
         @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
-      @param _metadata A struct specifying the TerminalV2 specific params _bondingCurveRate, and _reservedRate.
+      @param _metadata A struct specifying the TerminalV2 specific params.
         @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token splits.
         @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
