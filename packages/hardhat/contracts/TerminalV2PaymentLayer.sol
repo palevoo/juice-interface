@@ -21,7 +21,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
   This contract manages all inflows and outflows of funds into the Juicebox ecosystem. It stores all treasury funds for all projects.
 
   @dev 
-  A project can transfer its funds, along with the power to reconfigure and mint/burn their Tickets, from this contract to another allowed terminal contract at any time.
+  A project can transfer its funds, along with the power to reconfigure and mint/burn their tokens, from this contract to another allowed terminal contract at any time.
 
   Inherits from:
 
@@ -316,7 +316,7 @@ contract TerminalV2PaymentLayer is
         );
 
         // Can't send claimed funds to the zero address.
-        require(_beneficiary != address(0), "TerminalV2::redeem: ZERO_ADDRESS");
+        require(_beneficiary != address(0), "TV2PL: ZERO_ADDRESS");
 
         // Send the claimed funds to the beneficiary.
         if (_claimAmount > 0) Address.sendValue(_beneficiary, _claimAmount);
@@ -354,6 +354,13 @@ contract TerminalV2PaymentLayer is
             Operations.Migrate
         )
     {
+        // The data layer must be the project's current terminal.
+        require(
+            address(terminalDirectory.terminalOf(_projectId)) ==
+                address(dataLayer),
+            "TV2PL: UNAUTHORIZED"
+        );
+
         // Allow the terminal receiving the project's funds and operations to prepare for the migration.
         _to.prepForMigrationOf(_projectId);
 
@@ -373,8 +380,9 @@ contract TerminalV2PaymentLayer is
       @param _projectId The ID of the project to which the funds received belong.
     */
     function addToBalance(uint256 _projectId) external payable override {
-        // Record the added funds in the data later.
-        dataLayer.recordAddedBalance(msg.value, _projectId);
+        if (msg.value > 0)
+            // Record the added funds in the data later.
+            dataLayer.recordAddedBalance(msg.value, _projectId);
 
         emit AddToBalance(_projectId, msg.value, msg.sender);
     }
@@ -446,7 +454,7 @@ contract TerminalV2PaymentLayer is
                     // The project must have a terminal to send funds to.
                     require(
                         _terminal != ITerminal(address(0)),
-                        "TerminalV2::_distributeToPayoutSplits: BAD_MOD"
+                        "TV2PL: BAD_SPLIT"
                     );
 
                     // Save gas if this contract is being used as the terminal.
@@ -493,7 +501,7 @@ contract TerminalV2PaymentLayer is
 
       @param _from The amount to take a fee from.
       @param _percent The percent fee to take. Out of 200.
-      @param _beneficiary The address to print governance's tickets for.
+      @param _beneficiary The address to print the platforms tokens for.
       @param _memo A memo to send with the fee.
 
       @return feeAmount The amount of the fee taken.
@@ -532,10 +540,10 @@ contract TerminalV2PaymentLayer is
         bool _preferUnstakedTokens
     ) private returns (uint256) {
         // Positive payments only.
-        require(_amount > 0, "TerminalV2::_pay: BAD_AMOUNT");
+        require(_amount > 0, "TV2PL: BAD_AMOUNT");
 
-        // Cant send tickets to the zero address.
-        require(_beneficiary != address(0), "TerminalV2::_pay: ZERO_ADDRESS");
+        // Cant send tokens to the zero address.
+        require(_beneficiary != address(0), "TV2PL: ZERO_ADDRESS");
 
         FundingCycle memory _fundingCycle;
         uint256 _weight;

@@ -914,12 +914,6 @@ contract TerminalV2DataLayer is
         onlyPaymentLayer
         returns (uint256 balance)
     {
-        // This contract must be the project's current terminal.
-        require(
-            terminalDirectory.terminalOf(_projectId) == this,
-            "TV2DL: UNAUTHORIZED"
-        );
-
         // The migration destination must be allowed.
         require(migrationIsAllowed[_to], "TV2DL: NOT_ALLOWED");
 
@@ -954,8 +948,6 @@ contract TerminalV2DataLayer is
         override
         onlyPaymentLayer
     {
-        // The amount must be positive.
-        require(_amount > 0, "TV2DL: BAD_AMOUNT");
         // Set the balance.
         balanceOf[_projectId] = balanceOf[_projectId] + _amount;
     }
