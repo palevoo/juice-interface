@@ -231,7 +231,7 @@ contract TerminalV2DataLayer is
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _redemptionRate.
         @dev _metadata.ballotRedemptionRate The redemption rate to apply when there is an active ballot.
         @dev _metadata.pausePay Whether or not the pay functionality should be paused during this cycle.
-        @dev _metadata.pauseTap Whether or not the tap functionality should be paused during this cycle.
+        @dev _metadata.pauseWithdraw Whether or not the withdraw functionality should be paused during this cycle.
         @dev _metadata.pauseRedeem Whether or not the redeem functionality should be paused during this cycle.
         @dev _metadata.pauseMint Whether or not the mint functionality should be paused during this cycle.
         @dev _metadata.pauseBurn Whether or not the burn functionality should be paused during this cycle.
@@ -300,7 +300,7 @@ contract TerminalV2DataLayer is
           where x is _count, o is _currentOverflow, s is _totalSupply, and r is _redemptionRate.
         @dev _metadata.ballotRedemptionRate The redemption rate to apply when there is an active ballot.
         @dev _metadata.pausePay Whether or not the pay functionality should be paused during this cycle.
-        @dev _metadata.pauseTap Whether or not the tap functionality should be paused during this cycle.
+        @dev _metadata.pauseWithdraw Whether or not the withdraw functionality should be paused during this cycle.
         @dev _metadata.pauseRedeem Whether or not the redeem functionality should be paused during this cycle.
         @dev _metadata.pauseMint Whether or not the mint functionality should be paused during this cycle.
         @dev _metadata.pauseBurn Whether or not the burn functionality should be paused during this cycle.
@@ -1060,7 +1060,7 @@ contract TerminalV2DataLayer is
         // pause pay in bit 32.
         packed |= (_metadata.pausePay ? 1 : 0) << 32;
         // pause tap in bit 33.
-        packed |= (_metadata.pauseTap ? 1 : 0) << 33;
+        packed |= (_metadata.pauseWithdraw ? 1 : 0) << 33;
         // pause redeem in bit 34.
         packed |= (_metadata.pauseRedeem ? 1 : 0) << 34;
         // pause mint in bit 35.

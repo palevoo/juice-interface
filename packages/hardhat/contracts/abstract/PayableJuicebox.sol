@@ -10,7 +10,7 @@ import "./../interfaces/ITerminalDirectory.sol";
 /** 
   @notice A contract that inherits from JuiceboxProject can use Juicebox as a business-model-as-a-service.
   @dev The owner of the contract makes admin decisions such as:
-    - Which address is the funding cycle owner, which can tap funds from the funding cycle.
+    - Which address is the funding cycle owner, which can withdraw funds from the funding cycle.
     - Should this project's Tickets be migrated to a new TerminalV1. 
 */
 abstract contract PayableJuicebox is IERC721Receiver, Ownable {

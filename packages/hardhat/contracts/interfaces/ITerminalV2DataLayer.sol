@@ -18,7 +18,7 @@ struct FundingCycleMetadataV2 {
     uint256 redemptionRate;
     uint256 ballotRedemptionRate;
     bool pausePay;
-    bool pauseTap;
+    bool pauseWithdraw;
     bool pauseRedeem;
     bool pauseMint;
     bool pauseBurn;
