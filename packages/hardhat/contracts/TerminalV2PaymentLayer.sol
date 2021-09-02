@@ -34,7 +34,9 @@ contract TerminalV2PaymentLayer is
     Operatable,
     ReentrancyGuard
 {
-    // --- public immutable stored properties --- //
+    //*********************************************************************//
+    // ---------------- public immutable stored properties --------------- //
+    //*********************************************************************//
 
     /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
     IProjects public immutable override projects;
@@ -48,7 +50,9 @@ contract TerminalV2PaymentLayer is
     /// @notice The contract that stiches together funding cycles and treasury tokens.
     ITerminalV2DataLayer public immutable override dataLayer;
 
-    // --- external transactions --- //
+    //*********************************************************************//
+    // -------------------------- constructor ---------------------------- //
+    //*********************************************************************//
 
     /** 
       @param _operatorStore A contract storing operator assignments.
@@ -69,6 +73,10 @@ contract TerminalV2PaymentLayer is
         terminalDirectory = _terminalDirectory;
         dataLayer = _dataLayer;
     }
+
+    //*********************************************************************//
+    // ---------------------- external transactions ---------------------- //
+    //*********************************************************************//
 
     /**
       @notice
@@ -371,7 +379,9 @@ contract TerminalV2PaymentLayer is
         emit AddToBalance(_projectId, msg.value, msg.sender);
     }
 
-    // --- private helper functions --- //
+    //*********************************************************************//
+    // --------------------- private helper functions -------------------- //
+    //*********************************************************************//
 
     /** 
       @notice
