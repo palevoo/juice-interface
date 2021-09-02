@@ -360,37 +360,6 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      This call forwards all ETH received to the payment layer and does not modify state.
-
-      @param _projectId The ID of the project being contribute to.
-      @param _beneficiary The address to mint tokens for.
-      @param _memo A memo that will be included in the published event.
-      @param _preferUnstakedTokens Whether tokens should be unstaked automatically if ERC20's have been issued.
-
-      @return The number of the funding cycle that the payment was made during.
-    */
-    function pay(
-        uint256 _projectId,
-        address _beneficiary,
-        string calldata _memo,
-        bool _preferUnstakedTokens
-    ) external payable override returns (uint256) {
-        // The payment layer should never make a call to this function.
-        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
-
-        // This contract should forward the parameters and all ETH received to the payment layer.
-        return
-            paymentLayer.pay{value: msg.value}(
-                _projectId,
-                _beneficiary,
-                0,
-                _memo,
-                _preferUnstakedTokens
-            );
-    }
-
-    /**
-      @notice
       Mints and distributes all outstanding reserved tokens for a project.
 
       @param _projectId The ID of the project to which the reserved tokens belong.
@@ -541,6 +510,109 @@ contract TerminalV2DataLayer is
             _preferUnstakedTokens
         );
         emit Burn(_holder, _projectId, _tokenCount, _memo, msg.sender);
+    }
+
+    /**
+      @notice
+      Sets up any peice of internal state necessary for the specified project to migrate to this terminal.
+
+      @dev
+      This must be called before this contract is the current terminal for the project.
+
+      @dev
+      This function can be called many times, but must be called in the same transaction that migrates a project to this terminal.
+
+      @param _projectId The ID of the project that is being migrated to this terminal.
+    */
+    function prepForMigrationOf(uint256 _projectId) external override {
+        // This function can only be called if this contract isn't already the project's current terminal.
+        require(
+            terminalDirectory.terminalOf(_projectId) != this,
+            "TV2DL: NOT_ALLOWED"
+        );
+        // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
+        _processedTokenTrackerOf[_projectId] = int256(
+            ticketBooth.totalSupplyOf(_projectId)
+        );
+    }
+
+    /**
+      @notice
+      Adds a Terminal address to the allow list that project owners can migrate its funds and treasury operations to.
+
+      @dev
+      Only this contract's owner can add a contract to the migration allow list.
+
+      @param _terminal The terminal contract to allow.
+    */
+    function allowMigration(ITerminal _terminal) external override onlyOwner {
+        // Toggle the contract as allowed.
+        migrationIsAllowed[_terminal] = !migrationIsAllowed[_terminal];
+
+        emit AllowMigration(_terminal);
+    }
+
+    /**
+      @notice
+      Sets the contract that is operating as this contract's payment layer.
+
+      @dev
+      Only this contract's owner can set this contract's payment layer.
+
+      @param _paymentLayer The payment layer contract to set.
+    */
+    function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer)
+        external
+        override
+        onlyOwner
+    {
+        // Set the contract.
+        paymentLayer = _paymentLayer;
+
+        emit SetPaymentLayer(_paymentLayer, msg.sender);
+    }
+
+    /**
+      @notice
+      This call forwards all ETH received to the payment layer and does not modify state.
+
+      @param _projectId The ID of the project being contribute to.
+      @param _beneficiary The address to mint tokens for.
+      @param _memo A memo that will be included in the published event.
+      @param _preferUnstakedTokens Whether tokens should be unstaked automatically if ERC20's have been issued.
+
+      @return The number of the funding cycle that the payment was made during.
+    */
+    function pay(
+        uint256 _projectId,
+        address _beneficiary,
+        string calldata _memo,
+        bool _preferUnstakedTokens
+    ) external payable override returns (uint256) {
+        // The payment layer should never make a call to this function.
+        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
+
+        // This contract should forward the parameters and all ETH received to the payment layer.
+        return
+            paymentLayer.pay{value: msg.value}(
+                _projectId,
+                _beneficiary,
+                0,
+                _memo,
+                _preferUnstakedTokens
+            );
+    }
+
+    /**
+      @notice
+      This call forwards all ETH received to the payment layer and does not modify state.
+
+      @param _projectId The ID of the project being funded.
+    */
+    function addToBalance(uint256 _projectId) external payable override {
+        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
+        // This contract should forward the parameters and all ETH received to the payment layer.
+        paymentLayer.addToBalance{value: msg.value}(_projectId);
     }
 
     // --- ristricted external transactions --- //
@@ -933,18 +1005,6 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      This call forwards all ETH received to the payment layer and does not modify state.
-
-      @param _projectId The ID of the project being funded.
-    */
-    function addToBalance(uint256 _projectId) external payable override {
-        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
-        // This contract should forward the parameters and all ETH received to the payment layer.
-        paymentLayer.addToBalance{value: msg.value}(_projectId);
-    }
-
-    /**
-      @notice
       Records newly added funds for the project made at the payment layer.
 
       @dev
@@ -962,66 +1022,6 @@ contract TerminalV2DataLayer is
         require(_amount > 0, "TV2DL: BAD_AMOUNT");
         // Set the balance.
         balanceOf[_projectId] = balanceOf[_projectId] + _amount;
-    }
-
-    /**
-      @notice
-      Sets up any peice of internal state necessary for the specified project to migrate to this terminal.
-
-      @dev
-      This must be called before this contract is the current terminal for the project.
-
-      @dev
-      This function can be called many times, but must be called in the same transaction that migrates a project to this terminal.
-
-      @param _projectId The ID of the project that is being migrated to this terminal.
-    */
-    function prepForMigrationOf(uint256 _projectId) external override {
-        // This function can only be called if this contract isn't already the project's current terminal.
-        require(
-            terminalDirectory.terminalOf(_projectId) != this,
-            "TV2DL: NOT_ALLOWED"
-        );
-        // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
-        _processedTokenTrackerOf[_projectId] = int256(
-            ticketBooth.totalSupplyOf(_projectId)
-        );
-    }
-
-    /**
-      @notice
-      Adds a Terminal address to the allow list that project owners can migrate its funds and treasury operations to.
-
-      @dev
-      Only this contract's owner can add a contract to the migration allow list.
-
-      @param _terminal The terminal contract to allow.
-    */
-    function allowMigration(ITerminal _terminal) external override onlyOwner {
-        // Toggle the contract as allowed.
-        migrationIsAllowed[_terminal] = !migrationIsAllowed[_terminal];
-
-        emit AllowMigration(_terminal);
-    }
-
-    /**
-      @notice
-      Sets the contract that is operating as this contract's payment layer.
-
-      @dev
-      Only this contract's owner can set this contract's payment layer.
-
-      @param _paymentLayer The payment layer contract to set.
-    */
-    function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer)
-        external
-        override
-        onlyOwner
-    {
-        // Set the contract.
-        paymentLayer = _paymentLayer;
-
-        emit SetPaymentLayer(_paymentLayer, msg.sender);
     }
 
     // --- private helper functions --- //
