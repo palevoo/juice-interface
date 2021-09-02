@@ -21,7 +21,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
   This contract stiches together funding cycles and treasury tokens. It makes sure all activity is accounted for and correct. 
 
   @dev 
-  Each project can only have one terminal registered at a time with the TerminalDirectory. This is how the outside world knows where to send money to when trying to pay a project.
+  Each project can only have one terminal registered at a time with the TerminalDirectory. This is how the outside world knows where to send money when trying to pay a project.
   The project's currently set terminal is the only contract that can interact with the FundingCycles and TicketBooth contracts on behalf of the project.
 
   The project's currently set terminal is also the contract that will receive payments by default when the outside world references directly from the TerminalDirectory.
