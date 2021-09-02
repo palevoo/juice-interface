@@ -224,7 +224,7 @@ contract TerminalV2DataLayer is
           If the number is 200 (20%), the difference will be 20%. 
           There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
         @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
-      @param _metadata A struct specifying the TerminalV2 specific params.
+      @param _metadata A struct specifying the TerminalV2 specific params that a funding cycle can have.
         @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token splits.
         @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
@@ -293,7 +293,7 @@ contract TerminalV2DataLayer is
           If the number is 200 (20%), the difference will be 20%. 
           There's a special case: If the number is 201, the funding cycle will be non-recurring and one-time only.
         @dev _properties.ballot The ballot contract that will be used to approve subsequent reconfigurations. Must adhere to the IFundingCycleBallot interface.
-      @param _metadata A struct specifying the TerminalV2 specific params.
+      @param _metadata A struct specifying the TerminalV2 specific params that a funding cycle can have.
         @dev _metadata.reservedRate A number from 0-200 (0-100%) indicating the percentage of each contribution's newly minted tokens that will be reserved for the token splits.
         @dev _metadata.redemptionRate The rate from 0-200 (0-100%) that tunes the bonding curve according to which a project's tokens can be redeemed for overflow.
           The bonding curve formula is https://www.desmos.com/calculator/sp9ru6zbpk
