@@ -438,6 +438,7 @@ contract TerminalV2PaymentLayer is
                 if (_split.allocator != ISplitAllocator(address(0))) {
                     _split.allocator.allocate{value: _payoutAmount}(
                         _payoutAmount,
+                        SplitsGroups.Payouts,
                         _fundingCycle.projectId,
                         _split.projectId,
                         _split.beneficiary,

@@ -1294,6 +1294,7 @@ contract TerminalV2DataLayer is
             if (_split.allocator != ISplitAllocator(address(0)))
                 _split.allocator.allocate(
                     _tokenCount,
+                    SplitsGroups.ReservedTokens,
                     _fundingCycle.projectId,
                     _split.projectId,
                     _split.beneficiary,
