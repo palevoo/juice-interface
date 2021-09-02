@@ -240,7 +240,7 @@ contract TerminalV2DataLayer is
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
       @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
       @param _payoutSplits Any payout splits to set.
-      @param _reservedTokenSplits Any token splits to set.
+      @param _reservedTokenSplits Any reserved token splits to set.
     */
     function launchProject(
         address _owner,
@@ -309,7 +309,7 @@ contract TerminalV2DataLayer is
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
       @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
       @param _payoutSplits Any payout splits to set.
-      @param _reservedTokenSplits Any token splits to set.
+      @param _reservedTokenSplits Any reserved token splits to set.
 
       @return The ID of the funding cycle that was successfully configured.
     */
