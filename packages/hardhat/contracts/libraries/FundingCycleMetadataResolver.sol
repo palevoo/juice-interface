@@ -53,12 +53,28 @@ library FundingCycleMetadataResolver {
         return ((_fundingCycle.metadata >> 34) & 1) == 0;
     }
 
+    function mintPaused(FundingCycle memory _fundingCycle)
+        internal
+        pure
+        returns (bool)
+    {
+        return ((_fundingCycle.metadata >> 35) & 1) == 0;
+    }
+
+    function burnPaused(FundingCycle memory _fundingCycle)
+        internal
+        pure
+        returns (bool)
+    {
+        return ((_fundingCycle.metadata >> 36) & 1) == 0;
+    }
+
     function useDataSourceForPay(FundingCycle memory _fundingCycle)
         internal
         pure
         returns (bool)
     {
-        return (_fundingCycle.metadata >> 35) & 1 == 0;
+        return (_fundingCycle.metadata >> 37) & 1 == 0;
     }
 
     function useDataSourceForRedeem(FundingCycle memory _fundingCycle)
@@ -66,7 +82,7 @@ library FundingCycleMetadataResolver {
         pure
         returns (bool)
     {
-        return (_fundingCycle.metadata >> 36) & 1 == 0;
+        return (_fundingCycle.metadata >> 38) & 1 == 0;
     }
 
     function dataSource(FundingCycle memory _fundingCycle)
@@ -76,7 +92,7 @@ library FundingCycleMetadataResolver {
     {
         return
             IFundingCycleDataSource(
-                address(uint160(_fundingCycle.metadata >> 37))
+                address(uint160(_fundingCycle.metadata >> 39))
             );
     }
 }

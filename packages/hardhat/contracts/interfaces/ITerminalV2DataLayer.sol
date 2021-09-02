@@ -20,7 +20,8 @@ struct FundingCycleMetadataV2 {
     bool pausePay;
     bool pauseTap;
     bool pauseRedeem;
-    bool pausePrintReserves;
+    bool pauseMint;
+    bool pauseBurn;
     bool useDataSourceForPay;
     bool useDataSourceForRedeem;
     IFundingCycleDataSource dataSource;

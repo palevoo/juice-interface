@@ -233,6 +233,8 @@ contract TerminalV2DataLayer is
         @dev _metadata.pausePay Whether or not the pay functionality should be paused during this cycle.
         @dev _metadata.pauseTap Whether or not the tap functionality should be paused during this cycle.
         @dev _metadata.pauseRedeem Whether or not the redeem functionality should be paused during this cycle.
+        @dev _metadata.pauseMint Whether or not the mint functionality should be paused during this cycle.
+        @dev _metadata.pauseBurn Whether or not the burn functionality should be paused during this cycle.
         @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
@@ -259,43 +261,15 @@ contract TerminalV2DataLayer is
         // which will give it exclusive access to manage the project's funding cycles and tokens.
         uint256 _projectId = projects.create(_owner, _handle, _uri, this);
 
-        // Configure the funding cycle's properties.
-        FundingCycle memory _fundingCycle = fundingCycles.configure(
+        _configure(
             _projectId,
             _properties,
             _packedMetadata,
-            fee,
-            true // configure the active funding cycle. This property shouldn't matter since the project shouldn't yet have a funding cycle.
+            _overflowAllowance,
+            _payoutSplits,
+            _reservedTokenSplits,
+            true
         );
-
-        // Set payout splits if there are any.
-        if (_payoutSplits.length > 0)
-            splitsStore.set(
-                _projectId,
-                _fundingCycle.configured,
-                SplitsGroups.Payouts,
-                _payoutSplits
-            );
-
-        // Set token splits if there are any.
-        if (_reservedTokenSplits.length > 0)
-            splitsStore.set(
-                _projectId,
-                _fundingCycle.configured,
-                SplitsGroups.ReservedTokens,
-                _reservedTokenSplits
-            );
-
-        // Set the overflow allowance if the value is different from the currently set value.
-        if (
-            _overflowAllowance !=
-            overflowAllowanceOf[_projectId][_fundingCycle.configured]
-        )
-            _setOverflowAllowance(
-                _projectId,
-                _fundingCycle.configured,
-                _overflowAllowance
-            );
     }
 
     /**
@@ -328,6 +302,8 @@ contract TerminalV2DataLayer is
         @dev _metadata.pausePay Whether or not the pay functionality should be paused during this cycle.
         @dev _metadata.pauseTap Whether or not the tap functionality should be paused during this cycle.
         @dev _metadata.pauseRedeem Whether or not the redeem functionality should be paused during this cycle.
+        @dev _metadata.pauseMint Whether or not the mint functionality should be paused during this cycle.
+        @dev _metadata.pauseBurn Whether or not the burn functionality should be paused during this cycle.
         @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
@@ -370,45 +346,16 @@ contract TerminalV2DataLayer is
         bool _shouldConfigureActive = ticketBooth.totalSupplyOf(_projectId) ==
             0;
 
-        // Configure the funding cycle's properties.
-        FundingCycle memory _fundingCycle = fundingCycles.configure(
-            _projectId,
-            _properties,
-            _packedMetadata,
-            fee,
-            _shouldConfigureActive
-        );
-
-        // Set payout splits if there are any.
-        if (_payoutSplits.length > 0)
-            splitsStore.set(
+        return
+            _configure(
                 _projectId,
-                _fundingCycle.configured,
-                SplitsGroups.Payouts,
-                _payoutSplits
+                _properties,
+                _packedMetadata,
+                _overflowAllowance,
+                _payoutSplits,
+                _reservedTokenSplits,
+                _shouldConfigureActive
             );
-
-        // Set token splits if there are any.
-        if (_reservedTokenSplits.length > 0)
-            splitsStore.set(
-                _projectId,
-                _fundingCycle.configured,
-                SplitsGroups.ReservedTokens,
-                _reservedTokenSplits
-            );
-
-        // Set the overflow allowance if the value is different from the currently set value.
-        if (
-            _overflowAllowance !=
-            overflowAllowanceOf[_projectId][_fundingCycle.configured]
-        )
-            _setOverflowAllowance(
-                _projectId,
-                _fundingCycle.configured,
-                _overflowAllowance
-            );
-
-        return _fundingCycle.id;
     }
 
     /**
@@ -429,7 +376,7 @@ contract TerminalV2DataLayer is
         bool _preferUnstakedTokens
     ) external payable override returns (uint256) {
         // The payment layer should never make a call to this function.
-        require(msg.sender != address(paymentLayer), "TV2DL::P: FORBIDDEN");
+        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
 
         // This contract should forward the parameters and all ETH received to the payment layer.
         return
@@ -498,13 +445,16 @@ contract TerminalV2DataLayer is
         returns (uint256 tokenCount)
     {
         // Can't send to the zero address.
-        require(_beneficiary != address(0), "TV2DL::MT: ZERO_ADDRESS");
+        require(_beneficiary != address(0), "TV2DL: ZERO_ADDRESS");
 
         // There should be tokens to mint.
-        require(_amount > 0, "TV2DL::MT: NO_OP");
+        require(_amount > 0, "TV2DL: NO_OP");
 
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+
+        // The current funding cycle must not be paused.
+        require(_fundingCycle.mintPaused(), "TV2DL: PAUSED");
 
         // If a weight isn't specified, get the current funding cycle to read the weight from. If there's no current funding cycle, use the base weight.
         _weight = _weight > 0 ? _weight : _fundingCycle.number > 0
@@ -573,7 +523,14 @@ contract TerminalV2DataLayer is
         )
     {
         // There should be tokens to burn
-        require(_tokenCount > 0, "TV2DL::BT: NO_OP");
+        require(_tokenCount > 0, "TV2DL: NO_OP");
+
+        // Get a reference to the project's current funding cycle.
+        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+
+        // The current funding cycle must not be paused.
+        require(_fundingCycle.burnPaused(), "TV2DL: PAUSED");
+
         // Update the token tracker so that reserved tokens will still be correctly mintable.
         _subtractFromTokenTracker(_projectId, _tokenCount);
         // Redeem the tokens, which burns them.
@@ -637,10 +594,10 @@ contract TerminalV2DataLayer is
         fundingCycle = fundingCycles.currentOf(_projectId);
 
         // The project must have a funding cycle configured.
-        require(fundingCycle.number > 0, "TV2DL::RP: NO_FUNDING_CYCLE");
+        require(fundingCycle.number > 0, "TV2DL: NOT_FOUND");
 
         // Must not be paused.
-        require(!fundingCycle.payPaused(), "TV2DL::RP: PAUSED");
+        require(!fundingCycle.payPaused(), "TV2DL: PAUSED");
 
         // Save a reference to the delegate to use.
         IPayDelegate _delegate;
@@ -675,7 +632,7 @@ contract TerminalV2DataLayer is
             );
 
             // The token count must be greater than or equal to the minimum expected.
-            require(tokenCount >= _minReturnedTokens, "TV2DL::RP: INADEQUATE");
+            require(tokenCount >= _minReturnedTokens, "TV2DL: INADEQUATE");
 
             // Add the amount to the balance of the project.
             balanceOf[_projectId] = balanceOf[_projectId] + _amount;
@@ -740,15 +697,15 @@ contract TerminalV2DataLayer is
         fundingCycle = fundingCycles.tap(_projectId, _amount);
 
         // Funds cannot be withdrawn if there's no funding cycle.
-        require(fundingCycle.id > 0, "TV2DL::RW: NOT_FOUND");
+        require(fundingCycle.id > 0, "TV2DL: NOT_FOUND");
 
         // The funding cycle must not be paused.
-        require(!fundingCycle.tapPaused(), "TV2DL::RW: PAUSED");
+        require(!fundingCycle.tapPaused(), "TV2DL: PAUSED");
 
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "TV2DL::RW: UNEXPECTED_CURRENCY"
+            "TV2DL: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -758,12 +715,12 @@ contract TerminalV2DataLayer is
         );
 
         // The amount being withdrawn must be at least as much as was expected.
-        require(_minReturnedWei <= withdrawnAmount, "TV2DL::RW: INADEQUATE");
+        require(_minReturnedWei <= withdrawnAmount, "TV2DL: INADEQUATE");
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "TV2DL::RW: INSUFFICIENT_FUNDS"
+            "TV2DL: INSUFFICIENT_FUNDS"
         );
 
         // Removed the withdrawn funds from the project's balance.
@@ -800,7 +757,7 @@ contract TerminalV2DataLayer is
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "TV2DL::RUA: UNEXPECTED_CURRENCY"
+            "TV2DL: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -813,16 +770,16 @@ contract TerminalV2DataLayer is
         require(
             withdrawnAmount <=
                 overflowAllowanceOf[_projectId][fundingCycle.configured],
-            "TV2DL::RUA: NOT_ALLOWED"
+            "TV2DL: NOT_ALLOWED"
         );
 
         // The amount being withdrawn must be at least as much as was expected.
-        require(_minReturnedWei <= withdrawnAmount, "TV2DL::RUA: INADEQUATE");
+        require(_minReturnedWei <= withdrawnAmount, "TV2DL: INADEQUATE");
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "TV2DL::RUA: INSUFFICIENT_FUNDS"
+            "TV2DL: INSUFFICIENT_FUNDS"
         );
 
         // Store the decremented value.
@@ -874,14 +831,14 @@ contract TerminalV2DataLayer is
         // The holder must have the specified number of the project's tokens.
         require(
             ticketBooth.balanceOf(_holder, _projectId) >= _tokenCount,
-            "TV2DL::RR: INSUFFICIENT_TOKENS"
+            "TV2DL: INSUFFICIENT_TOKENS"
         );
 
         // Get a reference to the project's current funding cycle.
         fundingCycle = fundingCycles.currentOf(_projectId);
 
         // The current funding cycle must not be paused.
-        require(fundingCycle.redeemPaused(), "TV2DL:RR: PAUSED");
+        require(fundingCycle.redeemPaused(), "TV2DL: PAUSED");
 
         // Save a reference to the delegate to use.
         IRedeemDelegate _delegate;
@@ -897,12 +854,12 @@ contract TerminalV2DataLayer is
         }
 
         // The amount being claimed must be at least as much as was expected.
-        require(claimAmount >= _minReturnedWei, "TV2DL::RR: INADEQUATE");
+        require(claimAmount >= _minReturnedWei, "TV2DL: INADEQUATE");
 
         // The amount being claimed must be within the project's balance.
         require(
             claimAmount <= balanceOf[_projectId],
-            "TV2DL::RR: INSUFFICIENT_FUNDS"
+            "TV2DL: INSUFFICIENT_FUNDS"
         );
 
         // Redeem the tokens, which burns them.
@@ -952,11 +909,11 @@ contract TerminalV2DataLayer is
         // This contract must be the project's current terminal.
         require(
             terminalDirectory.terminalOf(_projectId) == this,
-            "TV2DL::RM: UNAUTHORIZED"
+            "TV2DL: UNAUTHORIZED"
         );
 
         // The migration destination must be allowed.
-        require(migrationIsAllowed[_to], "TV2DL::RM: NOT_ALLOWED");
+        require(migrationIsAllowed[_to], "TV2DL: NOT_ALLOWED");
 
         // All reserved tokens must be minted before migrating.
         if (
@@ -981,7 +938,7 @@ contract TerminalV2DataLayer is
       @param _projectId The ID of the project being funded.
     */
     function addToBalance(uint256 _projectId) external payable override {
-        require(msg.sender != address(paymentLayer), "TV2DL::ATB: FORBIDDEN");
+        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
         // This contract should forward the parameters and all ETH received to the payment layer.
         paymentLayer.addToBalance{value: msg.value}(_projectId);
     }
@@ -1002,7 +959,7 @@ contract TerminalV2DataLayer is
         onlyPaymentLayer
     {
         // The amount must be positive.
-        require(_amount > 0, "TV2DL::RAB: BAD_AMOUNT");
+        require(_amount > 0, "TV2DL: BAD_AMOUNT");
         // Set the balance.
         balanceOf[_projectId] = balanceOf[_projectId] + _amount;
     }
@@ -1023,7 +980,7 @@ contract TerminalV2DataLayer is
         // This function can only be called if this contract isn't already the project's current terminal.
         require(
             terminalDirectory.terminalOf(_projectId) != this,
-            "TV2DL::PFM: NOT_ALLOWED"
+            "TV2DL: NOT_ALLOWED"
         );
         // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
         _processedTokenTrackerOf[_projectId] = int256(
@@ -1081,21 +1038,15 @@ contract TerminalV2DataLayer is
         FundingCycleMetadataV2 memory _metadata
     ) private pure returns (uint256 packed) {
         // The reserved project token rate must be less than or equal to 200.
-        require(
-            _metadata.reservedRate <= 200,
-            "TV2DL::VPFCM: BAD_RESERVED_RATE"
-        );
+        require(_metadata.reservedRate <= 200, "TV2DL: BAD_RESERVED_RATE");
 
         // The redemption rate must be between 0 and 200.
-        require(
-            _metadata.redemptionRate <= 200,
-            "TV2DL::VPFCM: BAD_REDEMPTION_RATE"
-        );
+        require(_metadata.redemptionRate <= 200, "TV2DL: BAD_REDEMPTION_RATE");
 
         // The ballot redemption rate must be less than or equal to 200.
         require(
             _metadata.ballotRedemptionRate <= 200,
-            "TV2DL::VPFCM: BAD_BALLOT_REDEMPTION_RATE"
+            "TV2DL: BAD_BALLOT_REDEMPTION_RATE"
         );
 
         // version 1 in the first 8 bytes.
@@ -1110,14 +1061,18 @@ contract TerminalV2DataLayer is
         packed |= (_metadata.pausePay ? 1 : 0) << 32;
         // pause tap in bit 33.
         packed |= (_metadata.pauseTap ? 1 : 0) << 33;
-        // pause redeem  in bit 34.
+        // pause redeem in bit 34.
         packed |= (_metadata.pauseRedeem ? 1 : 0) << 34;
-        // use pay data source in bit 32.
-        packed |= (_metadata.useDataSourceForPay ? 1 : 0) << 35;
-        // use redeem data source in bit 33.
-        packed |= (_metadata.useDataSourceForRedeem ? 1 : 0) << 36;
-        // delegate address in bits 37-196.
-        packed |= uint160(address(_metadata.dataSource)) << 37;
+        // pause mint in bit 35.
+        packed |= (_metadata.pauseMint ? 1 : 0) << 35;
+        // pause mint in bit 36.
+        packed |= (_metadata.pauseBurn ? 1 : 0) << 36;
+        // use pay data source in bit 37.
+        packed |= (_metadata.useDataSourceForPay ? 1 : 0) << 37;
+        // use redeem data source in bit 38.
+        packed |= (_metadata.useDataSourceForRedeem ? 1 : 0) << 38;
+        // delegate address in bits 39-198.
+        packed |= uint160(address(_metadata.dataSource)) << 39;
     }
 
     /**
@@ -1369,30 +1324,6 @@ contract TerminalV2DataLayer is
             : _processedTokenTracker - int256(_amount);
     }
 
-    /** 
-      @notice
-      Sets the overflow allowance for a particular project's configuration.
-
-      @param _amount The amount to set as the allowance.
-      @param _projectId The ID of the project to set an allowance for.
-      @param _configuration The configuration to set an allowance for.
-
-    */
-    function _setOverflowAllowance(
-        uint256 _amount,
-        uint256 _projectId,
-        uint256 _configuration
-    ) private {
-        overflowAllowanceOf[_projectId][_configuration] = _amount;
-
-        emit SetOverflowAllowance(
-            _projectId,
-            _configuration,
-            _amount,
-            msg.sender
-        );
-    }
-
     /**
       @notice
       Gets the amount of reserved tokens currently tracked for a project given a reserved rate.
@@ -1425,5 +1356,68 @@ contract TerminalV2DataLayer is
                 200,
                 200 - _reservedRate
             ) - _unprocessedTokenBalanceOf;
+    }
+
+    /** 
+      @notice 
+      Configures a funding cycle and stores information pertinent to the configuration.
+
+      @dev
+      See the docs for `launchProject` and `configureFundingCycles`.
+    */
+    function _configure(
+        uint256 _projectId,
+        FundingCycleProperties calldata _properties,
+        uint256 _packedMetadata,
+        uint256 _overflowAllowance,
+        Split[] memory _payoutSplits,
+        Split[] memory _reservedTokenSplits,
+        bool _shouldConfigureActive
+    ) private returns (uint256) {
+        // Configure the funding cycle's properties.
+        FundingCycle memory _fundingCycle = fundingCycles.configure(
+            _projectId,
+            _properties,
+            _packedMetadata,
+            fee,
+            _shouldConfigureActive
+        );
+
+        // Set payout splits if there are any.
+        if (_payoutSplits.length > 0)
+            splitsStore.set(
+                _projectId,
+                _fundingCycle.configured,
+                SplitsGroups.Payouts,
+                _payoutSplits
+            );
+
+        // Set token splits if there are any.
+        if (_reservedTokenSplits.length > 0)
+            splitsStore.set(
+                _projectId,
+                _fundingCycle.configured,
+                SplitsGroups.ReservedTokens,
+                _reservedTokenSplits
+            );
+
+        // Set the overflow allowance if the value is different from the currently set value.
+        if (
+            _overflowAllowance !=
+            overflowAllowanceOf[_projectId][_fundingCycle.configured]
+        ) {
+            overflowAllowanceOf[_projectId][
+                _fundingCycle.configured
+            ] = _overflowAllowance;
+
+            emit SetOverflowAllowance(
+                _projectId,
+                _fundingCycle.configured,
+                _overflowAllowance,
+                msg.sender
+            );
+        }
+
+        return _fundingCycle.id;
     }
 }
