@@ -1088,7 +1088,7 @@ contract TerminalV2DataLayer is
         packed |= (_metadata.useDataSourceForPay ? 1 : 0) << 37;
         // use redeem data source in bit 38.
         packed |= (_metadata.useDataSourceForRedeem ? 1 : 0) << 38;
-        // delegate address in bits 39-198.
+        // data source address in bits 39-198.
         packed |= uint160(address(_metadata.dataSource)) << 39;
     }
 
