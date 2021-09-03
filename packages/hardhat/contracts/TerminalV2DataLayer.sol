@@ -896,7 +896,6 @@ contract TerminalV2DataLayer is
         // If a delegate was returned by the data source, issue a callback to it.
         if (_delegate != IRedemptionDelegate(address(0)))
             _delegate.didRedeem(
-                fundingCycle,
                 _holder,
                 _tokenCount,
                 claimAmount,
