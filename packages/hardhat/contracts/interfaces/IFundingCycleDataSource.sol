@@ -4,7 +4,7 @@ pragma solidity 0.8.6;
 import "./IFundingCycles.sol";
 
 import "./IPayDelegate.sol";
-import "./IRedeemDelegate.sol";
+import "./IRedemptionDelegate.sol";
 
 interface IFundingCycleDataSource {
     function payData(
@@ -25,6 +25,8 @@ interface IFundingCycleDataSource {
     function redeemData(
         address _holder,
         uint256 _count,
+        uint256 _redemptionRate,
+        uint256 _ballotRedemptionRate,
         address _beneficiary,
         string calldata _memo
     )
@@ -32,6 +34,6 @@ interface IFundingCycleDataSource {
         returns (
             uint256 amount,
             string calldata memo,
-            IRedeemDelegate delegate
+            IRedemptionDelegate delegate
         );
 }

@@ -3,7 +3,7 @@ pragma solidity 0.8.6;
 
 import "./IFundingCycles.sol";
 
-interface IRedeemDelegate {
+interface IRedemptionDelegate {
     function didRedeem(
         FundingCycle calldata _fundingCycle,
         address _holder,

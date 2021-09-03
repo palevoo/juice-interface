@@ -849,13 +849,20 @@ contract TerminalV2DataLayer is
         require(fundingCycle.redeemPaused(), "TV2DL: PAUSED");
 
         // Save a reference to the delegate to use.
-        IRedeemDelegate _delegate;
+        IRedemptionDelegate _delegate;
 
         // If the funding cycle has configured a data source, use it to derive a claim amount and memo.
         if (fundingCycle.useDataSourceForRedeem()) {
             (claimAmount, memo, _delegate) = fundingCycle
                 .dataSource()
-                .redeemData(_holder, _tokenCount, _beneficiary, _memo);
+                .redeemData(
+                    _holder,
+                    _tokenCount,
+                    fundingCycle.redemptionRate(),
+                    fundingCycle.ballotRedemptionRate(),
+                    _beneficiary,
+                    _memo
+                );
         } else {
             claimAmount = _claimableOverflowOf(fundingCycle, _tokenCount);
             memo = _memo;
@@ -887,7 +894,7 @@ contract TerminalV2DataLayer is
             balanceOf[_projectId] = balanceOf[_projectId] - claimAmount;
 
         // If a delegate was returned by the data source, issue a callback to it.
-        if (_delegate != IRedeemDelegate(address(0)))
+        if (_delegate != IRedemptionDelegate(address(0)))
             _delegate.didRedeem(
                 fundingCycle,
                 _holder,
