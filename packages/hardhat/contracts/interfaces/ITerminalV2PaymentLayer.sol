@@ -98,8 +98,8 @@ interface ITerminalV2PaymentLayer {
         uint256 _count,
         uint256 _minReturnedWei,
         address payable _beneficiary,
-        string memory _memo,
-        bytes memory _delegateMetadata
+        string calldata _memo,
+        bytes calldata _delegateMetadata
     ) external returns (uint256 claimedAmount);
 
     function pay(
