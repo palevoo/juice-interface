@@ -153,13 +153,13 @@ interface ITerminalV2DataLayer {
         returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount);
 
     function recordRedemption(
-        address _account,
+        address _holder,
         uint256 _projectId,
-        uint256 _amount,
+        uint256 _tokenCount,
         uint256 _minReturnedWei,
         address payable _beneficiary,
-        string calldata _memo,
-        bool _preferUnstakedTokens
+        string memory _memo,
+        bytes memory _delegateMetadata
     )
         external
         returns (
@@ -187,13 +187,13 @@ interface ITerminalV2DataLayer {
     ) external returns (uint256 tokenCount);
 
     function recordPayment(
-        address payer,
+        address _payer,
         uint256 _amount,
         uint256 _projectId,
         address _beneficiary,
         uint256 _minReturnedTokens,
         string memory _memo,
-        bool _preferUnstakedTokens
+        bytes memory _delegateMetadata
     )
         external
         returns (

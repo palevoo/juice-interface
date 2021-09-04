@@ -89,7 +89,6 @@ contract TerminalV2PaymentLayer is
       @param _beneficiary The address to mint tokens for and pass along to the funding cycle's data source and delegate.
       @param _minReturnedTokens The minimum number of tokens expected in return.
       @param _memo A memo that will be included in the published event, and passed along the the funding cycle's data source and delegate.
-      @param _preferUnstakedTokens Whether tokens should be unstaked automatically if ERC20's have been issued.
 
       @return The number of the funding cycle that the payment was made during.
     */
@@ -98,7 +97,7 @@ contract TerminalV2PaymentLayer is
         address _beneficiary,
         uint256 _minReturnedTokens,
         string calldata _memo,
-        bool _preferUnstakedTokens
+        bytes calldata _delegateMetadata
     ) external payable override returns (uint256) {
         return
             _pay(
@@ -107,7 +106,7 @@ contract TerminalV2PaymentLayer is
                 _beneficiary,
                 _minReturnedTokens,
                 _memo,
-                _preferUnstakedTokens
+                _delegateMetadata
             );
     }
 
@@ -262,23 +261,22 @@ contract TerminalV2PaymentLayer is
         );
     }
 
-    /**
-      @notice
-      Addresses can redeem their tokens to claim the project's overflowed ETH, or to trigger rules determined by the project's current funding cycle's data source.
+    // /**
+    //   @notice
+    //   Addresses can redeem their tokens to claim the project's overflowed ETH, or to trigger rules determined by the project's current funding cycle's data source.
 
-      @dev
-      Only a token's holder or a designated operator can redeem it.
+    //   @dev
+    //   Only a token's holder or a designated operator can redeem it.
 
-      @param _holder The account to redeem tokens for.
-      @param _projectId The ID of the project to which the tokens being redeemed belong.
-      @param _tokenCount The number of tokens to redeem.
-      @param _minReturnedWei The minimum amount of Wei expected in return.
-      @param _beneficiary The address to send the ETH to. Send the address this contract to burn the count.
-      @param _memo A memo to attach to the emitted event.
-      @param _preferUnstaked If the preference is to redeem tokens that have been converted to ERC-20s.
+    //   @param _holder The account to redeem tokens for.
+    //   @param _projectId The ID of the project to which the tokens being redeemed belong.
+    //   @param _tokenCount The number of tokens to redeem.
+    //   @param _minReturnedWei The minimum amount of Wei expected in return.
+    //   @param _beneficiary The address to send the ETH to. Send the address this contract to burn the count.
+    //   @param _memo A memo to attach to the emitted event.
 
-      @return amount The amount of ETH that the tokens were redeemed for, in wei.
-    */
+    //   @return amount The amount of ETH that the tokens were redeemed for, in wei.
+    // */
     function redeemTokens(
         address _holder,
         uint256 _projectId,
@@ -286,7 +284,7 @@ contract TerminalV2PaymentLayer is
         uint256 _minReturnedWei,
         address payable _beneficiary,
         string memory _memo,
-        bool _preferUnstaked
+        bytes memory _delegateMetadata
     )
         external
         override
@@ -296,42 +294,39 @@ contract TerminalV2PaymentLayer is
             _projectId,
             Operations.Redeem
         )
-        returns (uint256)
+        returns (uint256 claimAmount)
     {
+        // Can't send claimed funds to the zero address.
+        require(_beneficiary != address(0), "TV2PL: ZERO_ADDRESS");
+
         // Keep a reference to the funding cycles during which the redemption is being made.
         FundingCycle memory _fundingCycle;
 
-        // Keep a reference to the amount being claimed.
-        uint256 _claimAmount;
-
         // Record the redemption in the data layer.
-        (_fundingCycle, _claimAmount, _memo) = dataLayer.recordRedemption(
+        (_fundingCycle, claimAmount, _memo) = dataLayer.recordRedemption(
             _holder,
             _projectId,
             _tokenCount,
             _minReturnedWei,
             _beneficiary,
             _memo,
-            _preferUnstaked
+            _delegateMetadata
         );
 
-        // Can't send claimed funds to the zero address.
-        require(_beneficiary != address(0), "TV2PL: ZERO_ADDRESS");
-
         // Send the claimed funds to the beneficiary.
-        if (_claimAmount > 0) Address.sendValue(_beneficiary, _claimAmount);
+        if (claimAmount > 0) Address.sendValue(_beneficiary, claimAmount);
 
         emit Redeem(
-            _holder,
+            _fundingCycle.number,
             _projectId,
+            _holder,
+            _fundingCycle.id,
             _beneficiary,
             _tokenCount,
-            _claimAmount,
+            claimAmount,
             _memo,
             msg.sender
         );
-
-        return _claimAmount;
     }
 
     /**
@@ -466,7 +461,7 @@ contract TerminalV2PaymentLayer is
                             _split.beneficiary,
                             0,
                             _memo,
-                            _split.preferUnstaked
+                            bytes("")
                         );
                     } else {
                         _terminal.pay{value: _payoutAmount}(
@@ -524,7 +519,7 @@ contract TerminalV2PaymentLayer is
 
         // When processing the admin fee, save gas if the admin is using this contract as its terminal.
         address(_terminal) == address(dataLayer) // Use the local pay call.
-            ? _pay(feeAmount, 1, _beneficiary, 0, _memo, false) // Use the external pay call of the correct terminal.
+            ? _pay(feeAmount, 1, _beneficiary, 0, _memo, bytes("")) // Use the external pay call of the correct terminal.
             : _terminal.pay{value: feeAmount}(1, _beneficiary, _memo, false);
     }
 
@@ -538,7 +533,7 @@ contract TerminalV2PaymentLayer is
         address _beneficiary,
         uint256 _minReturnedTokens,
         string memory _memo,
-        bool _preferUnstakedTokens
+        bytes memory _delegateMetadata
     ) private returns (uint256) {
         // Positive payments only.
         require(_amount > 0, "TV2PL: BAD_AMOUNT");
@@ -558,14 +553,14 @@ contract TerminalV2PaymentLayer is
             _beneficiary,
             _minReturnedTokens,
             _memo,
-            _preferUnstakedTokens
+            _delegateMetadata
         );
 
         emit Pay(
             _fundingCycle.number,
             _projectId,
             _beneficiary,
-            _fundingCycle.id,
+            _fundingCycle,
             _amount,
             _weight,
             _tokenCount,

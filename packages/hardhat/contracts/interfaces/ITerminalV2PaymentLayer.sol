@@ -8,20 +8,9 @@ import "./ISplitsStore.sol";
 import "./ITerminalDirectory.sol";
 import "./ITerminalV2DataLayer.sol";
 import "./ITerminalDataLayer.sol";
+import "./IFundingCycles.sol";
 
 interface ITerminalV2PaymentLayer {
-    event Pay(
-        uint256 indexed fundingCycleNumber,
-        uint256 indexed projectId,
-        address indexed beneficiary,
-        uint256 fundingCycleId,
-        uint256 amount,
-        uint256 weight,
-        uint256 tokenCount,
-        string memo,
-        address caller
-    );
-
     event AddToBalance(
         uint256 indexed projectId,
         uint256 value,
@@ -56,9 +45,22 @@ interface ITerminalV2PaymentLayer {
         address caller
     );
 
-    event Redeem(
-        address indexed holder,
+    event Pay(
+        uint256 indexed fundingCycleNumber,
         uint256 indexed projectId,
+        address indexed beneficiary,
+        FundingCycle fundingCycle,
+        uint256 amount,
+        uint256 weight,
+        uint256 tokenCount,
+        string memo,
+        address caller
+    );
+    event Redeem(
+        uint256 indexed fundingCycleNumber,
+        uint256 indexed projectId,
+        address indexed holder,
+        uint256 fundingCycleId,
         address beneficiary,
         uint256 tokenCount,
         uint256 claimedAmount,
@@ -97,7 +99,7 @@ interface ITerminalV2PaymentLayer {
         uint256 _minReturnedWei,
         address payable _beneficiary,
         string memory _memo,
-        bool _preferUnstaked
+        bytes memory _delegateMetadata
     ) external returns (uint256 claimedAmount);
 
     function pay(
@@ -105,7 +107,7 @@ interface ITerminalV2PaymentLayer {
         address _beneficiary,
         uint256 _minReturnedTickets,
         string calldata _memo,
-        bool _preferUnstakedTickets
+        bytes calldata _delegateMetadata
     ) external payable returns (uint256 fundingCycleNumber);
 
     function useAllowance(

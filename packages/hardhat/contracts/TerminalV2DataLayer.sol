@@ -497,6 +497,7 @@ contract TerminalV2DataLayer is
 
         // Update the token tracker so that reserved tokens will still be correctly mintable.
         _subtractFromTokenTracker(_projectId, _tokenCount);
+
         // Redeem the tokens, which burns them.
         ticketBooth.redeem(
             _holder,
@@ -572,7 +573,7 @@ contract TerminalV2DataLayer is
       @param _beneficiary The address that should receive benefits from the payment.
       @param _minReturnedTokens The minimum number of tokens expected in return.
       @param _memo A memo that will be included in the published event.
-      @param _preferUnstakedTokens Whether ERC20's should be unstaked automatically if they have been issued.
+      @param _delegateMetadata Bytes to send along to the delegate, if one is provided.
 
       @return fundingCycle The funding cycle during which payment was made.
       @return weight The weight according to which new token supply was minted.
@@ -586,7 +587,7 @@ contract TerminalV2DataLayer is
         address _beneficiary,
         uint256 _minReturnedTokens,
         string memory _memo,
-        bool _preferUnstakedTokens
+        bytes memory _delegateMetadata
     )
         public
         override
@@ -612,14 +613,19 @@ contract TerminalV2DataLayer is
 
         // If the funding cycle has configured a data source, use it to derive a weight and memo.
         if (fundingCycle.useDataSourceForPay()) {
-            (weight, memo, _delegate) = fundingCycle.dataSource().payData(
-                _payer,
-                _amount,
-                fundingCycle.weight,
-                fundingCycle.reservedRate(),
-                _beneficiary,
-                _memo
-            );
+            (weight, memo, _delegate, _delegateMetadata) = fundingCycle
+                .dataSource()
+                .payData(
+                    PayDataParam(
+                        _payer,
+                        _amount,
+                        fundingCycle.weight,
+                        fundingCycle.reservedRate(),
+                        _beneficiary,
+                        _memo,
+                        _delegateMetadata
+                    )
+                );
             // Otherwise use the funding cycle's weight
         } else {
             weight = fundingCycle.weight;
@@ -648,12 +654,7 @@ contract TerminalV2DataLayer is
             // Mint tokens if needed.
             if (tokenCount > 0) {
                 // Mint the project's tokens for the beneficiary.
-                ticketBooth.print(
-                    _beneficiary,
-                    _projectId,
-                    tokenCount,
-                    _preferUnstakedTokens
-                );
+                ticketBooth.print(_beneficiary, _projectId, tokenCount, false);
                 // If all tokens are reserved, updated the token tracker to reflect this.
             } else if (_weightedAmount > 0) {
                 // Subtract the total weighted amount from the tracker so the full reserved token amount can be printed later.
@@ -662,16 +663,22 @@ contract TerminalV2DataLayer is
                     int256(_weightedAmount);
             }
         }
-
         // If a delegate was returned by the data source, issue a callback to it.
+        // TODO: see if we can made didPay easier and safer for people automatically.
+        // TODO: wording. subscriber? "Delegate" might overload some ethereum specific terminology.
+        // TODO: should delegates be an array?
         if (_delegate != IPayDelegate(address(0)))
             _delegate.didPay(
-                _payer,
-                _amount,
-                weight,
-                tokenCount,
-                _beneficiary,
-                _memo
+                DidPayParam(
+                    _payer,
+                    _projectId,
+                    _amount,
+                    weight,
+                    tokenCount,
+                    _beneficiary,
+                    memo,
+                    _delegateMetadata
+                )
             );
     }
 
@@ -812,7 +819,7 @@ contract TerminalV2DataLayer is
       @param _minReturnedWei The minimum amount of wei expected in return.
       @param _beneficiary The account that will benefit from the claimed amount.
       @param _memo A memo to pass along to the emitted event.
-      @param _preferUnstakedTokens Whether ERC20's should be redeemed first if they have been issued.
+      @param _delegateMetadata Bytes to send along to the delegate, if one is provided.
 
       @return fundingCycle The funding cycle during which the redemption was made.
       @return claimAmount The amount claimed.
@@ -824,8 +831,8 @@ contract TerminalV2DataLayer is
         uint256 _tokenCount,
         uint256 _minReturnedWei,
         address payable _beneficiary,
-        string calldata _memo,
-        bool _preferUnstakedTokens
+        string memory _memo,
+        bytes memory _delegateMetadata
     )
         external
         override
@@ -846,22 +853,26 @@ contract TerminalV2DataLayer is
         fundingCycle = fundingCycles.currentOf(_projectId);
 
         // The current funding cycle must not be paused.
-        require(fundingCycle.redeemPaused(), "TV2DL: PAUSED");
+        require(!fundingCycle.redeemPaused(), "TV2DL: PAUSED");
 
         // Save a reference to the delegate to use.
         IRedemptionDelegate _delegate;
 
         // If the funding cycle has configured a data source, use it to derive a claim amount and memo.
+        // TODO: think about using a default data source for default values.
         if (fundingCycle.useDataSourceForRedeem()) {
-            (claimAmount, memo, _delegate) = fundingCycle
+            (claimAmount, memo, _delegate, _delegateMetadata) = fundingCycle
                 .dataSource()
                 .redeemData(
-                    _holder,
-                    _tokenCount,
-                    fundingCycle.redemptionRate(),
-                    fundingCycle.ballotRedemptionRate(),
-                    _beneficiary,
-                    _memo
+                    RedeemDataParam(
+                        _holder,
+                        _tokenCount,
+                        fundingCycle.redemptionRate(),
+                        fundingCycle.ballotRedemptionRate(),
+                        _beneficiary,
+                        _memo,
+                        _delegateMetadata
+                    )
                 );
         } else {
             claimAmount = _claimableOverflowOf(fundingCycle, _tokenCount);
@@ -881,12 +892,7 @@ contract TerminalV2DataLayer is
         if (_tokenCount > 0) {
             // Update the token tracker so that reserved tokens will still be correctly mintable.
             _subtractFromTokenTracker(_projectId, _tokenCount);
-            ticketBooth.redeem(
-                _holder,
-                _projectId,
-                _tokenCount,
-                _preferUnstakedTokens
-            );
+            ticketBooth.redeem(_holder, _projectId, _tokenCount, false);
         }
 
         // Remove the redeemed funds from the project's balance.
@@ -896,11 +902,15 @@ contract TerminalV2DataLayer is
         // If a delegate was returned by the data source, issue a callback to it.
         if (_delegate != IRedemptionDelegate(address(0)))
             _delegate.didRedeem(
-                _holder,
-                _tokenCount,
-                claimAmount,
-                _beneficiary,
-                memo
+                DidRedeemParam(
+                    _holder,
+                    _projectId,
+                    _tokenCount,
+                    claimAmount,
+                    _beneficiary,
+                    memo,
+                    _delegateMetadata
+                )
             );
     }
 
@@ -1009,7 +1019,6 @@ contract TerminalV2DataLayer is
       @param _projectId The ID of the project being contribute to.
       @param _beneficiary The address to mint tokens for.
       @param _memo A memo that will be included in the published event.
-      @param _preferUnstakedTokens Whether tokens should be unstaked automatically if ERC20's have been issued.
 
       @return The number of the funding cycle that the payment was made during.
     */
@@ -1017,7 +1026,7 @@ contract TerminalV2DataLayer is
         uint256 _projectId,
         address _beneficiary,
         string calldata _memo,
-        bool _preferUnstakedTokens
+        bool
     ) external payable override returns (uint256) {
         // The payment layer should never make a call to this function.
         require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
@@ -1029,7 +1038,7 @@ contract TerminalV2DataLayer is
                 _beneficiary,
                 0,
                 _memo,
-                _preferUnstakedTokens
+                bytes("")
             );
     }
 
@@ -1264,6 +1273,7 @@ contract TerminalV2DataLayer is
         // Set the leftover amount to the initial amount.
         leftoverAmount = _amount;
 
+        // TODO: changing _splits to "_receipients" or ... ?
         // Get a reference to the project's reserved token splits.
         Split[] memory _splits = splitsStore.get(
             _fundingCycle.projectId,

@@ -85,6 +85,7 @@ library FundingCycleMetadataResolver {
         return (_fundingCycle.metadata >> 38) & 1 == 0;
     }
 
+    // TODO see if functions can be optionally implemented.
     function dataSource(FundingCycle memory _fundingCycle)
         internal
         pure

@@ -6,34 +6,42 @@ import "./IFundingCycles.sol";
 import "./IPayDelegate.sol";
 import "./IRedemptionDelegate.sol";
 
+struct PayDataParam {
+    address payer;
+    uint256 amount;
+    uint256 baseWeight;
+    uint256 reservedRate;
+    address beneficiary;
+    string memo;
+    bytes _delegateMetadata;
+}
+
+struct RedeemDataParam {
+    address holder;
+    uint256 count;
+    uint256 redemptionRate;
+    uint256 ballotRedemptionRate;
+    address beneficiary;
+    string memo;
+    bytes delegateMetadata;
+}
+
 interface IFundingCycleDataSource {
-    function payData(
-        address _payer,
-        uint256 _amount,
-        uint256 _baseWeight,
-        uint256 _reservedRate,
-        address _beneficiary,
-        string calldata _memo
-    )
+    function payData(PayDataParam calldata _param)
         external
         returns (
             uint256 weight,
-            string calldata memo,
-            IPayDelegate delegate
+            string memory memo,
+            IPayDelegate delegate,
+            bytes memory delegateMetadata
         );
 
-    function redeemData(
-        address _holder,
-        uint256 _count,
-        uint256 _redemptionRate,
-        uint256 _ballotRedemptionRate,
-        address _beneficiary,
-        string calldata _memo
-    )
+    function redeemData(RedeemDataParam calldata _param)
         external
         returns (
             uint256 amount,
-            string calldata memo,
-            IRedemptionDelegate delegate
+            string memory memo,
+            IRedemptionDelegate delegate,
+            bytes memory delegateMetadata
         );
 }
