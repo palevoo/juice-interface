@@ -1016,6 +1016,9 @@ contract TerminalV2DataLayer is
       @notice
       This call forwards all ETH received to the payment layer and does not modify state.
 
+      @dev
+      This call should never be called by the payment layer.
+
       @param _projectId The ID of the project being contribute to.
       @param _beneficiary The address to mint tokens for.
       @param _memo A memo that will be included in the published event.
@@ -1028,9 +1031,6 @@ contract TerminalV2DataLayer is
         string calldata _memo,
         bool
     ) external payable override returns (uint256) {
-        // The payment layer should never make a call to this function.
-        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
-
         // This contract should forward the parameters and all ETH received to the payment layer.
         return
             paymentLayer.pay{value: msg.value}(
@@ -1046,10 +1046,12 @@ contract TerminalV2DataLayer is
       @notice
       This call forwards all ETH received to the payment layer and does not modify state.
 
+      @dev
+      This call should never be called by the payment layer.
+
       @param _projectId The ID of the project being funded.
     */
     function addToBalance(uint256 _projectId) external payable override {
-        require(msg.sender != address(paymentLayer), "TV2DL: FORBIDDEN");
         // This contract should forward the parameters and all ETH received to the payment layer.
         paymentLayer.addToBalance{value: msg.value}(_projectId);
     }
