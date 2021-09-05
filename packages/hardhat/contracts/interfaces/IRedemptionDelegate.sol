@@ -9,7 +9,7 @@ struct DidRedeemParam {
     uint256 projectId;
     uint256 tokenCount;
     uint256 claimAmount;
-    address beneficiary;
+    address payable beneficiary;
     string memo;
     bytes metadata;
 }

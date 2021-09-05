@@ -60,7 +60,7 @@ interface ITerminalV2PaymentLayer {
         uint256 indexed fundingCycleNumber,
         uint256 indexed projectId,
         address indexed holder,
-        uint256 fundingCycleId,
+        FundingCycle fundingCycle,
         address beneficiary,
         uint256 tokenCount,
         uint256 claimedAmount,
@@ -106,6 +106,7 @@ interface ITerminalV2PaymentLayer {
         uint256 _projectId,
         address _beneficiary,
         uint256 _minReturnedTickets,
+        bool _preferUnstakedTokens,
         string calldata _memo,
         bytes calldata _delegateMetadata
     ) external payable returns (uint256 fundingCycleNumber);

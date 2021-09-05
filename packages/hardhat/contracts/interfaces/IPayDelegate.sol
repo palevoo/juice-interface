@@ -7,7 +7,7 @@ struct DidPayParam {
     uint256 amount;
     uint256 weight;
     uint256 count;
-    address beneficiary;
+    address payable beneficiary;
     string memo;
     bytes delegateMetadata;
 }

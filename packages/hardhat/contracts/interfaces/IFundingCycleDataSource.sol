@@ -9,7 +9,7 @@ import "./IRedemptionDelegate.sol";
 struct PayDataParam {
     address payer;
     uint256 amount;
-    uint256 baseWeight;
+    uint256 weight;
     uint256 reservedRate;
     address beneficiary;
     string memo;

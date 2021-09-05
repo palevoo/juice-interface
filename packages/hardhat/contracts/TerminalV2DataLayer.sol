@@ -570,7 +570,11 @@ contract TerminalV2DataLayer is
       @param _payer The original address that sent the payment to the payment layer.
       @param _amount The amount that is being paid.
       @param _projectId The ID of the project being contribute to.
-      @param _beneficiary The address that should receive benefits from the payment.
+      @param _preferUnstakedTokensAndBeneficiary Two properties are included in this packed uint256:
+        The first bit contains the flag indicating whether the request prefers to issue tokens unstaked rather than staked.
+        The remaining bits contains the address that should receive benefits from the payment.
+
+        This design is necessary two prevent a "Stack too deep" compiler error that comes up if the variables are declared seperately.
       @param _minReturnedTokens The minimum number of tokens expected in return.
       @param _memo A memo that will be included in the published event.
       @param _delegateMetadata Bytes to send along to the delegate, if one is provided.
@@ -584,7 +588,7 @@ contract TerminalV2DataLayer is
         address _payer,
         uint256 _amount,
         uint256 _projectId,
-        address _beneficiary,
+        uint256 _preferUnstakedTokensAndBeneficiary,
         uint256 _minReturnedTokens,
         string memory _memo,
         bytes memory _delegateMetadata
@@ -621,7 +625,9 @@ contract TerminalV2DataLayer is
                         _amount,
                         fundingCycle.weight,
                         fundingCycle.reservedRate(),
-                        _beneficiary,
+                        address(
+                            uint160(_preferUnstakedTokensAndBeneficiary >> 1)
+                        ),
                         _memo,
                         _delegateMetadata
                     )
@@ -654,7 +660,12 @@ contract TerminalV2DataLayer is
             // Mint tokens if needed.
             if (tokenCount > 0) {
                 // Mint the project's tokens for the beneficiary.
-                ticketBooth.print(_beneficiary, _projectId, tokenCount, false);
+                ticketBooth.print(
+                    address(uint160(_preferUnstakedTokensAndBeneficiary >> 1)),
+                    _projectId,
+                    tokenCount,
+                    (_preferUnstakedTokensAndBeneficiary & 1) == 0
+                );
                 // If all tokens are reserved, updated the token tracker to reflect this.
             } else if (_weightedAmount > 0) {
                 // Subtract the total weighted amount from the tracker so the full reserved token amount can be printed later.
@@ -675,7 +686,11 @@ contract TerminalV2DataLayer is
                     _amount,
                     weight,
                     tokenCount,
-                    _beneficiary,
+                    payable(
+                        address(
+                            uint160(_preferUnstakedTokensAndBeneficiary >> 1)
+                        )
+                    ),
                     memo,
                     _delegateMetadata
                 )
@@ -817,7 +832,7 @@ contract TerminalV2DataLayer is
       @param _projectId The ID of the project to which the tokens being redeemed belong.
       @param _tokenCount The number of tokens to redeem.
       @param _minReturnedWei The minimum amount of wei expected in return.
-      @param _beneficiary The account that will benefit from the claimed amount.
+      @param _beneficiary The address that will benefit from the claimed amount.
       @param _memo A memo to pass along to the emitted event.
       @param _delegateMetadata Bytes to send along to the delegate, if one is provided.
 
@@ -892,7 +907,7 @@ contract TerminalV2DataLayer is
         if (_tokenCount > 0) {
             // Update the token tracker so that reserved tokens will still be correctly mintable.
             _subtractFromTokenTracker(_projectId, _tokenCount);
-            ticketBooth.redeem(_holder, _projectId, _tokenCount, false);
+            ticketBooth.redeem(_holder, _projectId, _tokenCount, true);
         }
 
         // Remove the redeemed funds from the project's balance.
@@ -1022,6 +1037,7 @@ contract TerminalV2DataLayer is
       @param _projectId The ID of the project being contribute to.
       @param _beneficiary The address to mint tokens for.
       @param _memo A memo that will be included in the published event.
+      @param _preferUnstakedTokens A flag indicating whether the request prefers to redeem tokens unstaked rather than staked.
 
       @return The number of the funding cycle that the payment was made during.
     */
@@ -1029,7 +1045,7 @@ contract TerminalV2DataLayer is
         uint256 _projectId,
         address _beneficiary,
         string calldata _memo,
-        bool
+        bool _preferUnstakedTokens
     ) external payable override returns (uint256) {
         // This contract should forward the parameters and all ETH received to the payment layer.
         return
@@ -1037,6 +1053,7 @@ contract TerminalV2DataLayer is
                 _projectId,
                 _beneficiary,
                 0,
+                _preferUnstakedTokens,
                 _memo,
                 bytes("")
             );

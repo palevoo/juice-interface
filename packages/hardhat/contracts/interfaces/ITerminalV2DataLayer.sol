@@ -190,7 +190,7 @@ interface ITerminalV2DataLayer {
         address _payer,
         uint256 _amount,
         uint256 _projectId,
-        address _beneficiary,
+        uint256 _preferUnstakedTokensAndBeneficiary,
         uint256 _minReturnedTokens,
         string memory _memo,
         bytes memory _delegateMetadata
