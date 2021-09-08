@@ -55,7 +55,7 @@ interface ITerminalV2DataLayer {
 
     event AllowMigration(ITerminal terminal);
 
-    event Mint(
+    event MintTokens(
         address indexed beneficiary,
         uint256 indexed projectId,
         uint256 amount,
@@ -66,7 +66,7 @@ interface ITerminalV2DataLayer {
         address caller
     );
 
-    event Burn(
+    event BurnTokens(
         address indexed holder,
         uint256 indexed projectId,
         uint256 count,
@@ -92,10 +92,10 @@ interface ITerminalV2DataLayer {
 
     function balanceOf(uint256 _projectId) external view returns (uint256);
 
-    function overflowAllowanceOf(uint256 _projectId, uint256 _configuration)
-        external
-        view
-        returns (uint256);
+    function remainingOverflowAllowanceOf(
+        uint256 _projectId,
+        uint256 _configuration
+    ) external view returns (uint256);
 
     function currentOverflowOf(uint256 _projectId)
         external

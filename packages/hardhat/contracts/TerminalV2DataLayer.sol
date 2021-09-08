@@ -18,7 +18,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
   @notice 
-  This contract stiches together funding cycles and treasury tokens. It makes sure all activity is accounted for and correct. 
+  This contract stitches together funding cycles and treasury tokens. It makes sure all activity is accounted for and correct. 
 
   @dev 
   Each project can only have one terminal registered at a time with the TerminalDirectory. This is how the outside world knows where to send money when trying to pay a project.
@@ -63,43 +63,101 @@ contract TerminalV2DataLayer is
     // --------------- public immutable stored properties ---------------- //
     //*********************************************************************//
 
-    /// @notice The Projects contract which mints ERC-721's that represent project ownership.
+    /** 
+      @notice 
+      The Projects contract which mints ERC-721's that represent project ownership.
+    */
     IProjects public immutable override projects;
 
-    /// @notice The contract storing all funding cycle configurations.
+    /** 
+      @notice 
+      The contract storing all funding cycle configurations.
+    */
     IFundingCycles public immutable override fundingCycles;
 
-    /// @notice The contract that manages token minting and burning.
+    /** 
+      @notice 
+      The contract that manages token minting and burning.
+    */
     ITicketBooth public immutable override ticketBooth;
 
-    /// @notice The contract that stores splits for each project.
+    /** 
+      @notice 
+      The contract that stores splits for each project.
+    */
     ISplitsStore public immutable override splitsStore;
 
-    /// @notice The contract that exposes price feeds.
+    /** 
+      @notice 
+      The contract that exposes price feeds.
+    */
     IPrices public immutable override prices;
 
-    /// @notice The directory of terminals.
+    /** 
+      @notice 
+      The directory of terminals.
+    */
     ITerminalDirectory public immutable override terminalDirectory;
 
     //*********************************************************************//
     // --------------------- public stored properties -------------------- //
     //*********************************************************************//
 
-    /// @notice The amount of ETH that each project has.
+    /** 
+      @notice 
+      The amount of ETH that each project has.
+
+      @dev
+      [_projectId] 
+
+      _projectId The ID of the project to get the balance of.
+
+      @return The ETH balance of the specified project.
+    */
     mapping(uint256 => uint256) public override balanceOf;
 
-    /// @notice Whether or not a particular contract is available for projects to migrate their funds to.
+    /** 
+      @notice 
+      Whether or not a particular contract is available for projects to migrate their funds to.
+
+      @dev
+      [_contractAddress] 
+
+      _contractAddress The ITerminal address of the contract that is either allowed or not.
+
+      @return A boolean indicating if migration is allowed to the specified address.
+    */
     mapping(ITerminal => bool) public override migrationIsAllowed;
 
-    /// @notice The amount of overflow that a project is allowed to tap into on-demand.
+    /**
+      @notice 
+      The amount of overflow that a project is allowed to tap into on-demand.
+
+      @dev
+      [_projectId][_configuration]
+
+      _projectId The ID of the project to get the current overflow allowance of.
+      _configuration The configuration of the during which the allowance applies.
+
+      @return The current overflow allowance for the specified project configuration. Decreases as projects use of the allowance.
+    */
     mapping(uint256 => mapping(uint256 => uint256))
         public
-        override overflowAllowanceOf;
+        override remainingOverflowAllowanceOf;
 
-    /// @notice The contract that stores funds, and manages inflows/outflows.
+    /** 
+      @notice 
+      The contract that stores funds, and manages inflows/outflows.
+    */
     ITerminalV2PaymentLayer public override paymentLayer;
 
-    /// @notice The platform fee percent. Out of 200.
+    /** 
+      @notice 
+      The platform fee percent.
+
+      @dev 
+      Out of 200.
+    */
     uint256 public override fee = 10;
 
     //*********************************************************************//
@@ -444,7 +502,7 @@ contract TerminalV2DataLayer is
             _preferUnstakedTokens
         );
 
-        emit Mint(
+        emit MintTokens(
             _beneficiary,
             _projectId,
             _amount,
@@ -505,7 +563,7 @@ contract TerminalV2DataLayer is
             _tokenCount,
             _preferUnstakedTokens
         );
-        emit Burn(_holder, _projectId, _tokenCount, _memo, msg.sender);
+        emit BurnTokens(_holder, _projectId, _tokenCount, _memo, msg.sender);
     }
 
     /**
@@ -538,7 +596,11 @@ contract TerminalV2DataLayer is
 
       @param _projectId The ID of the project that is being migrated to this terminal.
     */
-    function prepForMigrationOf(uint256 _projectId) external override {
+    function prepForMigrationOf(uint256 _projectId)
+        external
+        override
+        nonReentrant
+    {
         // This function can only be called if this contract isn't already the project's current terminal.
         require(
             terminalDirectory.terminalOf(_projectId) != this,
@@ -799,7 +861,9 @@ contract TerminalV2DataLayer is
         // There must be sufficient allowance available.
         require(
             withdrawnAmount <=
-                overflowAllowanceOf[_projectId][fundingCycle.configured],
+                remainingOverflowAllowanceOf[_projectId][
+                    fundingCycle.configured
+                ],
             "TV2DL: NOT_ALLOWED"
         );
 
@@ -813,8 +877,8 @@ contract TerminalV2DataLayer is
         );
 
         // Store the decremented value.
-        overflowAllowanceOf[_projectId][fundingCycle.configured] =
-            overflowAllowanceOf[_projectId][fundingCycle.configured] -
+        remainingOverflowAllowanceOf[_projectId][fundingCycle.configured] =
+            remainingOverflowAllowanceOf[_projectId][fundingCycle.configured] -
             withdrawnAmount;
 
         // Update the project's balance.
@@ -1457,9 +1521,9 @@ contract TerminalV2DataLayer is
         // Set the overflow allowance if the value is different from the currently set value.
         if (
             _overflowAllowance !=
-            overflowAllowanceOf[_projectId][_fundingCycle.configured]
+            remainingOverflowAllowanceOf[_projectId][_fundingCycle.configured]
         ) {
-            overflowAllowanceOf[_projectId][
+            remainingOverflowAllowanceOf[_projectId][
                 _fundingCycle.configured
             ] = _overflowAllowance;
 

@@ -38,16 +38,28 @@ contract TerminalV2PaymentLayer is
     // ---------------- public immutable stored properties --------------- //
     //*********************************************************************//
 
-    /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
+    /** 
+      @notice
+      The Projects contract which mints ERC-721's that represent project ownership and transfers.
+    */
     IProjects public immutable override projects;
 
-    /// @notice The contract that stores splits for each project.
+    /** 
+      @notice
+      The contract that stores splits for each project.
+    */
     ISplitsStore public immutable override splitsStore;
 
-    /// @notice The directory of terminals.
+    /** 
+      @notice
+      The directory of terminals.
+    */
     ITerminalDirectory public immutable override terminalDirectory;
 
-    /// @notice The contract that stiches together funding cycles and treasury tokens.
+    /** 
+      @notice
+      The contract that stiches together funding cycles and treasury tokens.
+    */
     ITerminalV2DataLayer public immutable override dataLayer;
 
     //*********************************************************************//
@@ -214,6 +226,7 @@ contract TerminalV2PaymentLayer is
             _projectId,
             Operations2.UseAllowance
         )
+        returns (uint256)
     {
         // Record the use of the allowance in the data layer.
         (
@@ -263,6 +276,8 @@ contract TerminalV2PaymentLayer is
             _leftoverTransferAmount,
             msg.sender
         );
+
+        return _fundingCycle.configured;
     }
 
     /**

@@ -109,7 +109,7 @@ interface ITerminalV2PaymentLayer {
         bool _preferUnstakedTokens,
         string calldata _memo,
         bytes calldata _delegateMetadata
-    ) external payable returns (uint256 fundingCycleNumber);
+    ) external payable returns (uint256 fundingCycleConfiguration);
 
     function useAllowance(
         uint256 _projectId,
@@ -117,7 +117,7 @@ interface ITerminalV2PaymentLayer {
         uint256 _currency,
         uint256 _minReturnedWei,
         address payable _beneficiary
-    ) external;
+    ) external returns (uint256 fundingCycleNumber);
 
     function migrate(uint256 _projectId, ITerminalDataLayer _to) external;
 

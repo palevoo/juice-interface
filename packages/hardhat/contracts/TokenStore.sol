@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./interfaces/ITicketBooth.sol";
+import "./interfaces/ITokenStore.sol";
 import "./abstract/Operatable.sol";
-import "./abstract/TerminalUtility.sol";
+import "./abstract/BootloadableTerminalUtility.sol";
 
 import "./libraries/Operations.sol";
 
-import "./Tickets.sol";
+import "./Token.sol";
 
 /** 
   @notice 
-  Manage Ticket printing, redemption, and account balances.
+  Manage Token minting, burning, and account balances.
 
   @dev
-  Tickets can be either represented internally staked, or as unstaked ERC-20s.
+  Tokens can be either represented internally staked, or as unstaked ERC-20s.
   This contract manages these two representations and the conversion between the two.
 
   @dev
-  The total supply of a project's tickets and the balance of each account are calculated in this contract.
+  The total supply of a project's tokens and the balance of each account are calculated in this contract.
 */
-contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
+contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
     // --- public immutable stored properties --- //
 
     /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
@@ -28,23 +28,23 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
 
     // --- public stored properties --- //
 
-    // Each project's ERC20 Ticket tokens.
-    mapping(uint256 => ITickets) public override ticketsOf;
+    // Each project's ERC20 Token tokens.
+    mapping(uint256 => IToken) public override tokenOf;
 
-    // Each holder's balance of staked Tickets for each project.
+    // Each holder's balance of staked Tokens for each project.
     mapping(address => mapping(uint256 => uint256))
         public
         override stakedBalanceOf;
 
-    // The total supply of staked tickets for each project.
+    // The total supply of staked tokens for each project.
     mapping(uint256 => uint256) public override stakedTotalSupplyOf;
 
-    // The amount of each holders tickets that are locked.
+    // The amount of each holders tokens that are locked.
     mapping(address => mapping(uint256 => uint256))
         public
         override lockedBalanceOf;
 
-    // The amount of each holders tickets that are locked by each address.
+    // The amount of each holders tokens that are locked by each address.
     mapping(address => mapping(address => mapping(uint256 => uint256)))
         public
         override lockedBalanceBy;
@@ -53,7 +53,7 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
 
     /** 
       @notice 
-      The total supply of tickets for each project, including staked and unstaked tickets.
+      The total supply of tokens for each project, including staked and unstaked tokens.
 
       @param _projectId The ID of the project to get the total supply of.
 
@@ -66,16 +66,16 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
         returns (uint256 supply)
     {
         supply = stakedTotalSupplyOf[_projectId];
-        ITickets _tickets = ticketsOf[_projectId];
-        if (_tickets != ITickets(address(0)))
-            supply = supply + _tickets.totalSupply();
+        IToken _token = tokenOf[_projectId];
+        if (_token != IToken(address(0)))
+            supply = supply + _token.totalSupply();
     }
 
     /** 
       @notice 
-      The total balance of tickets a holder has for a specified project, including staked and unstaked tickets.
+      The total balance of tokens a holder has for a specified project, including staked and unstaked tokens.
 
-      @param _holder The ticket holder to get a balance for.
+      @param _holder The token holder to get a balance for.
       @param _projectId The project to get the `_hodler`s balance of.
 
       @return balance The balance.
@@ -87,9 +87,9 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
         returns (uint256 balance)
     {
         balance = stakedBalanceOf[_holder][_projectId];
-        ITickets _ticket = ticketsOf[_projectId];
-        if (_ticket != ITickets(address(0)))
-            balance = balance + _ticket.balanceOf(_holder);
+        IToken _token = tokenOf[_projectId];
+        if (_token != IToken(address(0)))
+            balance = balance + _token.balanceOf(_holder);
     }
 
     // --- external transactions --- //
@@ -102,21 +102,25 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
     constructor(
         IProjects _projects,
         IOperatorStore _operatorStore,
-        ITerminalDirectory _terminalDirectory
-    ) Operatable(_operatorStore) TerminalUtility(_terminalDirectory) {
+        ITerminalDirectory _terminalDirectory,
+        address _bootloader
+    )
+        Operatable(_operatorStore)
+        BootloadableTerminalUtility(_terminalDirectory, _bootloader)
+    {
         projects = _projects;
     }
 
     /**
         @notice 
-        Issues an owner's ERC-20 Tickets that'll be used when unstaking tickets.
+        Issues an owner's ERC-20 Tokens that'll be used when unstaking tokens.
 
         @dev 
-        Deploys an owner's Ticket ERC-20 token contract.
+        Deploys an owner's Token ERC-20 token contract.
 
-        @param _projectId The ID of the project being issued tickets.
-        @param _name The ERC-20's name. " Juicebox ticket" will be appended.
-        @param _symbol The ERC-20's symbol. "j" will be prepended.
+        @param _projectId The ID of the project being issued tokens.
+        @param _name The ERC-20's name.
+        @param _symbol The ERC-20's symbol.
     */
     function issue(
         uint256 _projectId,
@@ -132,58 +136,55 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
         )
     {
         // There must be a name.
-        require((bytes(_name).length > 0), "TicketBooth::issue: EMPTY_NAME");
+        require((bytes(_name).length > 0), "TokenStore::issue: EMPTY_NAME");
 
         // There must be a symbol.
-        require(
-            (bytes(_symbol).length > 0),
-            "TicketBooth::issue: EMPTY_SYMBOL"
-        );
+        require((bytes(_symbol).length > 0), "TokenStore::issue: EMPTY_SYMBOL");
 
-        // Only one ERC20 ticket can be issued.
+        // Only one ERC20 token can be issued.
         require(
-            ticketsOf[_projectId] == ITickets(address(0)),
-            "TicketBooth::issue: ALREADY_ISSUED"
+            tokenOf[_projectId] == IToken(address(0)),
+            "TokenStore::issue: ALREADY_ISSUED"
         );
 
         // Create the contract in this TerminalV1 contract in order to have mint and burn privileges.
         // Prepend the strings with standards.
-        ticketsOf[_projectId] = new Tickets(_name, _symbol);
+        tokenOf[_projectId] = new Token(_name, _symbol);
 
         emit Issue(_projectId, _name, _symbol, msg.sender);
     }
 
     /** 
       @notice 
-      Print new tickets.
+      Mint new tokens.
 
       @dev
-      Only a project's current terminal can print its tickets.
+      Only a project's current terminal can mint its tokens.
 
-      @param _holder The address receiving the new tickets.
-      @param _projectId The project to which the tickets belong.
-      @param _amount The amount to print.
-      @param _preferUnstakedTickets Whether ERC20's should be converted automatically if they have been issued.
+      @param _holder The address receiving the new tokens.
+      @param _projectId The project to which the tokens belong.
+      @param _amount The amount to mint.
+      @param _preferUnstakedTokens Whether ERC20's should be converted automatically if they have been issued.
     */
-    function print(
+    function mint(
         address _holder,
         uint256 _projectId,
         uint256 _amount,
-        bool _preferUnstakedTickets
-    ) external override onlyTerminal(_projectId) {
+        bool _preferUnstakedTokens
+    ) external override onlyTerminalOrBootloader(_projectId) {
         // An amount must be specified.
-        require(_amount > 0, "TicketBooth::print: NO_OP");
+        require(_amount > 0, "TokenStore::mint: NO_OP");
 
-        // Get a reference to the project's ERC20 tickets.
-        ITickets _tickets = ticketsOf[_projectId];
+        // Get a reference to the project's ERC20 tokens.
+        IToken _token = tokenOf[_projectId];
 
-        // If there exists ERC-20 tickets and the caller prefers these unstaked tickets.
-        bool _shouldUnstakeTickets = _preferUnstakedTickets &&
-            _tickets != ITickets(address(0));
+        // If there exists ERC-20 tokens and the caller prefers these unstaked tokens.
+        bool _shouldUnstakeTokens = _preferUnstakedTokens &&
+            _token != IToken(address(0));
 
-        if (_shouldUnstakeTickets) {
-            // Print the equivalent amount of ERC20s.
-            _tickets.print(_holder, _amount);
+        if (_shouldUnstakeTokens) {
+            // Mint the equivalent amount of ERC20s.
+            _token.mint(_holder, _amount);
         } else {
             // Add to the staked balance and total supply.
             stakedBalanceOf[_holder][_projectId] =
@@ -194,47 +195,47 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
                 _amount;
         }
 
-        emit Print(
+        emit Mint(
             _holder,
             _projectId,
             _amount,
-            _shouldUnstakeTickets,
-            _preferUnstakedTickets,
+            _shouldUnstakeTokens,
+            _preferUnstakedTokens,
             msg.sender
         );
     }
 
     /** 
       @notice 
-      Redeems tickets.
+      Burns tokens.
 
       @dev
-      Only a project's current terminal can redeem its tickets.
+      Only a project's current terminal can burn its tokens.
 
-      @param _holder The address that owns the tickets being redeemed.
-      @param _projectId The ID of the project of the tickets being redeemed.
-      @param _amount The amount of tickets being redeemed.
-      @param _preferUnstaked If the preference is to redeem tickets that have been converted to ERC-20s.
+      @param _holder The address that owns the tokens being burned.
+      @param _projectId The ID of the project of the tokens being burned.
+      @param _amount The amount of tokens being burned.
+      @param _preferUnstaked If the preference is to burn tokens that have been converted to ERC-20s.
     */
-    function redeem(
+    function burn(
         address _holder,
         uint256 _projectId,
         uint256 _amount,
         bool _preferUnstaked
     ) external override onlyTerminal(_projectId) {
-        // Get a reference to the project's ERC20 tickets.
-        ITickets _tickets = ticketsOf[_projectId];
+        // Get a reference to the project's ERC20 tokens.
+        IToken _token = tokenOf[_projectId];
 
         // Get a reference to the staked amount.
         uint256 _unlockedStakedBalance = stakedBalanceOf[_holder][_projectId] -
             lockedBalanceOf[_holder][_projectId];
 
-        // Get a reference to the number of tickets there are.
-        uint256 _unstakedBalanceOf = _tickets == ITickets(address(0))
+        // Get a reference to the number of tokens there are.
+        uint256 _unstakedBalanceOf = _token == IToken(address(0))
             ? 0
-            : _tickets.balanceOf(_holder);
+            : _token.balanceOf(_holder);
 
-        // There must be enough tickets.
+        // There must be enough tokens.
         // Prevent potential overflow by not relying on addition.
         require(
             (_amount < _unstakedBalanceOf &&
@@ -243,44 +244,44 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
                     _unlockedStakedBalance >= _amount - _unstakedBalanceOf) ||
                 (_amount >= _unlockedStakedBalance &&
                     _unstakedBalanceOf >= _amount - _unlockedStakedBalance),
-            "TicketBooth::redeem: INSUFFICIENT_FUNDS"
+            "TokenStore::redeem: INSUFFICIENT_FUNDS"
         );
 
-        // The amount of tickets to redeem.
-        uint256 _unstakedTicketsToRedeem;
+        // The amount of tokens to burn.
+        uint256 _unstakedTokensToBurn;
 
-        // If there's no balance, redeem no tickets
+        // If there's no balance, redeem no tokens.
         if (_unstakedBalanceOf == 0) {
-            _unstakedTicketsToRedeem = 0;
-            // If prefer converted, redeem tickets before redeeming staked tickets.
+            _unstakedTokensToBurn = 0;
+            // If prefer converted, redeem tokens before redeeming staked tokens.
         } else if (_preferUnstaked) {
-            _unstakedTicketsToRedeem = _unstakedBalanceOf >= _amount
+            _unstakedTokensToBurn = _unstakedBalanceOf >= _amount
                 ? _amount
                 : _unstakedBalanceOf;
-            // Otherwise, redeem staked tickets before unstaked tickets.
+            // Otherwise, redeem staked tokens before unstaked tokens.
         } else {
-            _unstakedTicketsToRedeem = _unlockedStakedBalance >= _amount
+            _unstakedTokensToBurn = _unlockedStakedBalance >= _amount
                 ? 0
                 : _amount - _unlockedStakedBalance;
         }
 
-        // The amount of staked tickets to redeem.
-        uint256 _stakedTicketsToRedeem = _amount - _unstakedTicketsToRedeem;
+        // The amount of staked tokens to redeem.
+        uint256 _stakedTokensToBurn = _amount - _unstakedTokensToBurn;
 
-        // Redeem the tickets.
-        if (_unstakedTicketsToRedeem > 0)
-            _tickets.redeem(_holder, _unstakedTicketsToRedeem);
-        if (_stakedTicketsToRedeem > 0) {
+        // burn the tokens.
+        if (_unstakedTokensToBurn > 0)
+            _token.burn(_holder, _unstakedTokensToBurn);
+        if (_stakedTokensToBurn > 0) {
             // Reduce the holders balance and the total supply.
             stakedBalanceOf[_holder][_projectId] =
                 stakedBalanceOf[_holder][_projectId] -
-                _stakedTicketsToRedeem;
+                _stakedTokensToBurn;
             stakedTotalSupplyOf[_projectId] =
                 stakedTotalSupplyOf[_projectId] -
-                _stakedTicketsToRedeem;
+                _stakedTokensToBurn;
         }
 
-        emit Redeem(
+        emit Burn(
             _holder,
             _projectId,
             _amount,
@@ -292,14 +293,14 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
 
     /**
       @notice 
-      Stakes ERC20 tickets by burning their supply and creating an internal staked version.
+      Stakes ERC20 tokens by burning their supply and creating an internal staked version.
 
       @dev
-      Only a ticket holder or an operator can stake its tickets.
+      Only a ticket holder or an operator can stake its tokens.
 
-      @param _holder The owner of the tickets to stake.
-      @param _projectId The ID of the project whos tickets are being staked.
-      @param _amount The amount of tickets to stake.
+      @param _holder The owner of the tokens to stake.
+      @param _projectId The ID of the project whos tokens are being staked.
+      @param _amount The amount of tokens to stake.
      */
     function stake(
         address _holder,
@@ -314,26 +315,23 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
             Operations.Stake
         )
     {
-        // Get a reference to the project's ERC20 tickets.
-        ITickets _tickets = ticketsOf[_projectId];
+        // Get a reference to the project's ERC20 tokens.
+        IToken _token = tokenOf[_projectId];
 
-        // Tickets must have been issued.
-        require(
-            _tickets != ITickets(address(0)),
-            "TicketBooth::stake: NOT_FOUND"
-        );
+        // Tokens must have been issued.
+        require(_token != IToken(address(0)), "TokenStore::stake: NOT_FOUND");
 
         // Get a reference to the holder's current balance.
-        uint256 _unstakedBalanceOf = _tickets.balanceOf(_holder);
+        uint256 _unstakedBalanceOf = _token.balanceOf(_holder);
 
         // There must be enough balance to stake.
         require(
             _unstakedBalanceOf >= _amount,
-            "TicketBooth::stake: INSUFFICIENT_FUNDS"
+            "TokenStore::stake: INSUFFICIENT_FUNDS"
         );
 
-        // Redeem the equivalent amount of ERC20s.
-        _tickets.redeem(_holder, _amount);
+        // Burn the equivalent amount of ERC20s.
+        _token.burn(_holder, _amount);
 
         // Add the staked amount from the holder's balance.
         stakedBalanceOf[_holder][_projectId] =
@@ -350,14 +348,14 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
 
     /**
       @notice 
-      Unstakes internal tickets by creating and distributing ERC20 tickets.
+      Unstakes internal tokens by creating and distributing ERC20 tokens.
 
       @dev
-      Only a ticket holder or an operator can unstake its tickets.
+      Only a token holder or an operator can unstake its tokens.
 
-      @param _holder The owner of the tickets to unstake.
-      @param _projectId The ID of the project whos tickets are being unstaked.
-      @param _amount The amount of tickets to unstake.
+      @param _holder The owner of the tokens to unstake.
+      @param _projectId The ID of the project whos tokens are being unstaked.
+      @param _amount The amount of tokens to unstake.
      */
     function unstake(
         address _holder,
@@ -372,23 +370,20 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
             Operations.Unstake
         )
     {
-        // Get a reference to the project's ERC20 tickets.
-        ITickets _tickets = ticketsOf[_projectId];
+        // Get a reference to the project's ERC20 tokens.
+        IToken _token = tokenOf[_projectId];
 
-        // Tickets must have been issued.
-        require(
-            _tickets != ITickets(address(0)),
-            "TicketBooth::unstake: NOT_FOUND"
-        );
+        // Tokens must have been issued.
+        require(_token != IToken(address(0)), "TokenStore::unstake: NOT_FOUND");
 
-        // Get a reference to the amount of unstaked tickets.
-        uint256 _unlockedStakedTickets = stakedBalanceOf[_holder][_projectId] -
+        // Get a reference to the amount of unstaked tokens.
+        uint256 _unlockedStakedTokens = stakedBalanceOf[_holder][_projectId] -
             lockedBalanceOf[_holder][_projectId];
 
-        // There must be enough unlocked staked tickets to unstake.
+        // There must be enough unlocked staked tokens to unstake.
         require(
-            _unlockedStakedTickets >= _amount,
-            "TicketBooth::unstake: INSUFFICIENT_FUNDS"
+            _unlockedStakedTokens >= _amount,
+            "TokenStore::unstake: INSUFFICIENT_FUNDS"
         );
 
         // Subtract the unstaked amount from the holder's balance.
@@ -401,22 +396,22 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
             stakedTotalSupplyOf[_projectId] -
             _amount;
 
-        // Print the equivalent amount of ERC20s.
-        _tickets.print(_holder, _amount);
+        // Mint the equivalent amount of ERC20s.
+        _token.mint(_holder, _amount);
 
         emit Unstake(_holder, _projectId, _amount, msg.sender);
     }
 
     /** 
       @notice 
-      Lock a project's tickets, preventing them from being redeemed and from converting to ERC20s.
+      Lock a project's tokens, preventing them from being redeemed and from converting to ERC20s.
 
       @dev
-      Only a ticket holder or an operator can lock its tickets.
+      Only a ticket holder or an operator can lock its tokens.
 
-      @param _holder The holder to lock tickets from.
-      @param _projectId The ID of the project whos tickets are being locked.
-      @param _amount The amount of tickets to lock.
+      @param _holder The holder to lock tokens from.
+      @param _projectId The ID of the project whos tokens are being locked.
+      @param _amount The amount of tokens to lock.
     */
     function lock(
         address _holder,
@@ -432,14 +427,14 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
         )
     {
         // Amount must be greater than 0.
-        require(_amount > 0, "TicketBooth::lock: NO_OP");
+        require(_amount > 0, "TokenStore::lock: NO_OP");
 
-        // The holder must have enough tickets to lock.
+        // The holder must have enough tokens to lock.
         require(
             stakedBalanceOf[_holder][_projectId] -
                 lockedBalanceOf[_holder][_projectId] >=
                 _amount,
-            "TicketBooth::lock: INSUFFICIENT_FUNDS"
+            "TokenStore::lock: INSUFFICIENT_FUNDS"
         );
 
         // Update the lock.
@@ -455,14 +450,14 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
 
     /** 
       @notice 
-      Unlock a project's tickets.
+      Unlock a project's tokens.
 
       @dev
-      The address that locked the tickets must be the address that unlocks the tickets.
+      The address that locked the tokens must be the address that unlocks the tokens.
 
-      @param _holder The holder to unlock tickets from.
-      @param _projectId The ID of the project whos tickets are being unlocked.
-      @param _amount The amount of tickets to unlock.
+      @param _holder The holder to unlock tokens from.
+      @param _projectId The ID of the project whos tokens are being unlocked.
+      @param _amount The amount of tokens to unlock.
     */
     function unlock(
         address _holder,
@@ -470,12 +465,12 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
         uint256 _amount
     ) external override {
         // Amount must be greater than 0.
-        require(_amount > 0, "TicketBooth::unlock: NO_OP");
+        require(_amount > 0, "TokenStore::unlock: NO_OP");
 
-        // There must be enough locked tickets to unlock.
+        // There must be enough locked tokens to unlock.
         require(
             lockedBalanceBy[msg.sender][_holder][_projectId] >= _amount,
-            "TicketBooth::unlock: INSUFFICIENT_FUNDS"
+            "TokenStore::unlock: INSUFFICIENT_FUNDS"
         );
 
         // Update the lock.
@@ -491,15 +486,15 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
 
     /** 
       @notice 
-      Allows a ticket holder to transfer its tickets to another account, without unstaking to ERC-20s.
+      Allows a ticket holder to transfer its tokens to another account, without unstaking to ERC-20s.
 
       @dev
-      Only a ticket holder or an operator can transfer its tickets.
+      Only a ticket holder or an operator can transfer its tokens.
 
-      @param _holder The holder to transfer tickets from.
-      @param _projectId The ID of the project whos tickets are being transfered.
-      @param _amount The amount of tickets to transfer.
-      @param _recipient The recipient of the tickets.
+      @param _holder The holder to transfer tokens from.
+      @param _projectId The ID of the project whos tokens are being transfered.
+      @param _amount The amount of tokens to transfer.
+      @param _recipient The recipient of the tokens.
     */
     function transfer(
         address _holder,
@@ -516,25 +511,22 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
         )
     {
         // Can't transfer to the zero address.
-        require(
-            _recipient != address(0),
-            "TicketBooth::transfer: ZERO_ADDRESS"
-        );
+        require(_recipient != address(0), "TokenStore::transfer: ZERO_ADDRESS");
 
         // An address can't transfer to itself.
-        require(_holder != _recipient, "TicketBooth::transfer: IDENTITY");
+        require(_holder != _recipient, "TokenStore::transfer: IDENTITY");
 
         // There must be an amount to transfer.
-        require(_amount > 0, "TicketBooth::transfer: NO_OP");
+        require(_amount > 0, "TokenStore::transfer: NO_OP");
 
-        // Get a reference to the amount of unlocked staked tickets.
-        uint256 _unlockedStakedTickets = stakedBalanceOf[_holder][_projectId] -
+        // Get a reference to the amount of unlocked staked tokens.
+        uint256 _unlockedStakedTokens = stakedBalanceOf[_holder][_projectId] -
             lockedBalanceOf[_holder][_projectId];
 
-        // There must be enough unlocked staked tickets to transfer.
+        // There must be enough unlocked staked tokens to transfer.
         require(
-            _amount <= _unlockedStakedTickets,
-            "TicketBooth::transfer: INSUFFICIENT_FUNDS"
+            _amount <= _unlockedStakedTokens,
+            "TokenStore::transfer: INSUFFICIENT_FUNDS"
         );
 
         // Subtract from the holder.
@@ -542,7 +534,7 @@ contract TicketBooth is TerminalUtility, Operatable, ITicketBooth {
             stakedBalanceOf[_holder][_projectId] -
             _amount;
 
-        // Add the tickets to the recipient.
+        // Add the tokens to the recipient.
         stakedBalanceOf[_recipient][_projectId] =
             stakedBalanceOf[_recipient][_projectId] +
             _amount;
