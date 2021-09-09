@@ -723,7 +723,7 @@ contract FundingCycles is TerminalUtility, IFundingCycles {
         // If the base has a limit, find the last permanent funding cycle, which is needed to make subsequent calculations.
         // Otherwise, the base is already the latest permanent funding cycle.
         FundingCycle memory _latestPermanentFundingCycle = _baseFundingCycle
-        .cycleLimit > 0
+            .cycleLimit > 0
             ? _latestPermanentCycleBefore(_baseFundingCycle)
             : _baseFundingCycle;
 
@@ -742,7 +742,7 @@ contract FundingCycles is TerminalUtility, IFundingCycles {
                 _baseFundingCycle.cycleLimit > 0 && _cycleEnd < block.timestamp
             ) {
                 _timeFromImmediateStartMultiple = _latestPermanentFundingCycle
-                .duration == 0
+                    .duration == 0
                     ? 0
                     : ((block.timestamp - _cycleEnd) %
                         (_latestPermanentFundingCycle.duration *
@@ -817,7 +817,7 @@ contract FundingCycles is TerminalUtility, IFundingCycles {
     ) private {
         // Get the latest permanent funding cycle.
         FundingCycle memory _latestPermanentFundingCycle = _baseFundingCycle
-        .cycleLimit > 0
+            .cycleLimit > 0
             ? _latestPermanentCycleBefore(_baseFundingCycle)
             : _baseFundingCycle;
 
@@ -990,9 +990,9 @@ contract FundingCycles is TerminalUtility, IFundingCycles {
             uint24(_packedIntrinsicProperties >> 232)
         );
 
-
-            uint256 _packedConfigurationProperties
-         = _packedConfigurationPropertiesOf[_id];
+        uint256 _packedConfigurationProperties = _packedConfigurationPropertiesOf[
+                _id
+            ];
         _fundingCycle.ballot = IFundingCycleBallot(
             address(uint160(_packedConfigurationProperties))
         );
@@ -1064,7 +1064,7 @@ contract FundingCycles is TerminalUtility, IFundingCycles {
         } else {
             // If the cycle has ended, make the calculation with the latest permanent funding cycle.
             _timeFromImmediateStartMultiple = _latestPermanentFundingCycle
-            .duration == 0
+                .duration == 0
                 ? 0
                 : ((_mustStartOnOrAfter -
                     (_baseFundingCycle.start +
@@ -1159,13 +1159,12 @@ contract FundingCycles is TerminalUtility, IFundingCycles {
             if (_latestPermanentFundingCycle.discountRate > 0) {
                 // The number of times to apply the latest permanent discount rate.
 
-
-                    uint256 _permanentDiscountMultiple
-                 = _latestPermanentFundingCycle.duration == 0
-                    ? 0
-                    : (_startDistance - _limitLength) /
-                        (_latestPermanentFundingCycle.duration *
-                            SECONDS_IN_DAY);
+                uint256 _permanentDiscountMultiple = _latestPermanentFundingCycle
+                        .duration == 0
+                        ? 0
+                        : (_startDistance - _limitLength) /
+                            (_latestPermanentFundingCycle.duration *
+                                SECONDS_IN_DAY);
 
                 for (uint256 i = 0; i < _permanentDiscountMultiple; i++) {
                     // base the weight on the result of the previous calculation.

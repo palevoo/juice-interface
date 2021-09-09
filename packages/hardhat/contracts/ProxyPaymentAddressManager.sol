@@ -49,14 +49,18 @@ contract ProxyPaymentAddressManager is IProxyPaymentAddressManager {
         returns (IProxyPaymentAddress[] memory)
     {
         return _addressesOf[_projectId];
-    }    
+    }
 
     /** 
       @notice Deploys a proxy payment address.
       @param _projectId ID of the project funds will be fowarded to.
       @param _memo Memo that will be attached withdrawal transactions.
     */
-    function deploy(uint256 _projectId, string memory _memo) external override returns(address) {
+    function deploy(uint256 _projectId, string memory _memo)
+        external
+        override
+        returns (address)
+    {
         require(
             _projectId > 0,
             "ProxyPaymentAddressManager::deploy: ZERO_PROJECT"
@@ -81,5 +85,4 @@ contract ProxyPaymentAddressManager is IProxyPaymentAddressManager {
         // Return the address of the proxy payment address.
         return address(proxyPaymentAddress);
     }
-
 }

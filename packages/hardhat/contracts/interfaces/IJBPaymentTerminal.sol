@@ -3,22 +3,21 @@ pragma solidity 0.8.6;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-import "./IProjects.sol";
-import "./ISplitsStore.sol";
-import "./ITerminalDirectory.sol";
-import "./ITerminalV2DataLayer.sol";
-import "./ITerminalDataLayer.sol";
-import "./IFundingCycles.sol";
+import "./IJBProjects.sol";
+import "./IJBDirectory.sol";
+import "./IJBPaymentTerminalData.sol";
+import "./IJBSplitsStore.sol";
 
-interface ITerminalV2PaymentLayer {
+interface IJBPaymentTerminal {
     event AddToBalance(
         uint256 indexed projectId,
         uint256 value,
+        string memo,
         address caller
     );
     event Migrate(
         uint256 indexed projectId,
-        ITerminal indexed to,
+        IJBTerminal indexed to,
         uint256 amount,
         address caller
     );
@@ -75,14 +74,13 @@ interface ITerminalV2PaymentLayer {
         uint256 amount,
         address caller
     );
+    event AllowMigration(IJBTerminal terminal);
 
-    function projects() external view returns (IProjects);
+    function projects() external view returns (IJBProjects);
 
-    function splitsStore() external view returns (ISplitsStore);
+    function splitsStore() external view returns (IJBSplitsStore);
 
-    function terminalDirectory() external view returns (ITerminalDirectory);
-
-    function dataLayer() external view returns (ITerminalV2DataLayer);
+    function data() external view returns (IJBPaymentTerminalData);
 
     function distributePayouts(
         uint256 _projectId,
@@ -102,15 +100,6 @@ interface ITerminalV2PaymentLayer {
         bytes calldata _delegateMetadata
     ) external returns (uint256 claimedAmount);
 
-    function pay(
-        uint256 _projectId,
-        address _beneficiary,
-        uint256 _minReturnedTickets,
-        bool _preferUnstakedTokens,
-        string calldata _memo,
-        bytes calldata _delegateMetadata
-    ) external payable returns (uint256 fundingCycleConfiguration);
-
     function useAllowance(
         uint256 _projectId,
         uint256 _amount,
@@ -119,7 +108,7 @@ interface ITerminalV2PaymentLayer {
         address payable _beneficiary
     ) external returns (uint256 fundingCycleNumber);
 
-    function migrate(uint256 _projectId, ITerminalDataLayer _to) external;
+    function migrate(uint256 _projectId, IJBTerminal _to) external;
 
-    function addToBalance(uint256 _projectId) external payable;
+    function allowMigration(IJBTerminal _contract) external;
 }

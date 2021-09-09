@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
-import "./../interfaces/ITerminalDirectory.sol";
+import "./../interfaces/IJBDirectory.sol";
 
 /** 
   @notice A contract that inherits from JuiceboxProject can use Juicebox as a business-model-as-a-service.
@@ -13,20 +12,20 @@ import "./../interfaces/ITerminalDirectory.sol";
     - Which address is the funding cycle owner, which can withdraw funds from the funding cycle.
     - Should this project's Tickets be migrated to a new TerminalV1. 
 */
-abstract contract PayableJuicebox is IERC721Receiver, Ownable {
+abstract contract PayableJuicebox is Ownable {
     /// @notice The direct deposit terminals.
-    ITerminalDirectory public immutable terminalDirectory;
+    IJBDirectory immutable directory;
 
     /// @notice The ID of the project that should be used to forward this contract's received payments.
     uint256 public projectId;
 
     /** 
       @param _projectId The ID of the project that should be used to forward this contract's received payments.
-      @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
+      @param _directory A directory of a project's current Juicebox terminal to receive payments in.
     */
-    constructor(uint256 _projectId, ITerminalDirectory _terminalDirectory) {
+    constructor(uint256 _projectId, IJBDirectory _directory) {
         projectId = _projectId;
-        terminalDirectory = _terminalDirectory;
+        directory = _directory;
     }
 
     /** 
@@ -81,11 +80,11 @@ abstract contract PayableJuicebox is IERC721Receiver, Ownable {
         );
 
         // Find the terminal for this contract's project.
-        ITerminal _terminal = terminalDirectory.terminalOf(_projectId);
+        IJBTerminal _terminal = directory.terminalOf(_projectId);
 
         // There must be a terminal.
         require(
-            _terminal != ITerminal(address(0)),
+            _terminal != IJBTerminal(address(0)),
             "JuiceboxProject::_fundTreasury: TERMINAL_NOT_FOUND"
         );
 
@@ -99,8 +98,10 @@ abstract contract PayableJuicebox is IERC721Receiver, Ownable {
         _terminal.pay{value: _amount}(
             _projectId,
             _beneficiary,
+            0,
+            _preferUnstakedTickets,
             _memo,
-            _preferUnstakedTickets
+            bytes("")
         );
     }
 
@@ -115,11 +116,11 @@ abstract contract PayableJuicebox is IERC721Receiver, Ownable {
         require(projectId != 0, "JuiceboxProject::_pay: PROJECT_NOT_FOUND");
 
         // Get the terminal for this contract's project.
-        ITerminal _terminal = terminalDirectory.terminalOf(projectId);
+        IJBTerminal _terminal = directory.terminalOf(projectId);
 
         // There must be a terminal.
         require(
-            _terminal != ITerminal(address(0)),
+            _terminal != IJBTerminal(address(0)),
             "JuiceboxProject::_pay: TERMINAL_NOT_FOUND"
         );
 
@@ -127,8 +128,10 @@ abstract contract PayableJuicebox is IERC721Receiver, Ownable {
             _terminal.pay{value: msg.value}(
                 projectId,
                 _beneficiary,
+                0,
+                _preferUnstakedTickets,
                 _memo,
-                _preferUnstakedTickets
+                bytes("")
             );
     }
 }

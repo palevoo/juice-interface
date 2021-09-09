@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./IPrices.sol";
-import "./IProjects.sol";
 import "./IFundingCycleBallot.sol";
 
 /// @notice The funding cycle structure represents a project stewarded by an address, and accounts for which addresses have helped sustain the project.
@@ -50,7 +48,7 @@ struct FundingCycleProperties {
     IFundingCycleBallot ballot;
 }
 
-interface IFundingCycleStore {
+interface IJBFundingCycleStore {
     event Configure(
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,

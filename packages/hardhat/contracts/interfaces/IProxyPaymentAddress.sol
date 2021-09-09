@@ -5,16 +5,9 @@ import "./ITerminalDirectory.sol";
 import "./ITicketBooth.sol";
 
 interface IProxyPaymentAddress {
+    event Receive(address indexed caller, uint256 value);
 
-    event Receive(
-        address indexed caller,
-        uint256 value
-    );
-
-    event Tap(
-        address indexed caller,
-        uint256 value
-    );
+    event Tap(address indexed caller, uint256 value);
 
     event TransferTickets(
         address indexed caller,
@@ -34,5 +27,4 @@ interface IProxyPaymentAddress {
     function tap() external;
 
     function transferTickets(address _beneficiary, uint256 _amount) external;
-
 }

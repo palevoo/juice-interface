@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./IFundingCycles.sol";
+import "./IJBFundingCycleStore.sol";
 
 import "./IPayDelegate.sol";
 import "./IRedemptionDelegate.sol";
@@ -26,7 +26,7 @@ struct RedeemDataParam {
     bytes delegateMetadata;
 }
 
-interface IFundingCycleDataSource {
+interface IJBFundingCycleDataSource {
     function payData(PayDataParam calldata _param)
         external
         returns (

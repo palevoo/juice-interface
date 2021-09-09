@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./IFundingCycles.sol";
-import "./ITerminalV2DataLayer.sol";
+import "./IJBFundingCycleStore.sol";
 
 struct DidRedeemParam {
     address holder;

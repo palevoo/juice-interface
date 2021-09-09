@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./../interfaces/IFundingCycles.sol";
-import "./../interfaces/IFundingCycleDataSource.sol";
+import "./../interfaces/IJBFundingCycleStore.sol";
+import "./../interfaces/IJBFundingCycleDataSource.sol";
 
 library FundingCycleMetadataResolver {
     function reservedRate(FundingCycle memory _fundingCycle)
@@ -89,10 +89,10 @@ library FundingCycleMetadataResolver {
     function dataSource(FundingCycle memory _fundingCycle)
         internal
         pure
-        returns (IFundingCycleDataSource)
+        returns (IJBFundingCycleDataSource)
     {
         return
-            IFundingCycleDataSource(
+            IJBFundingCycleDataSource(
                 address(uint160(_fundingCycle.metadata >> 39))
             );
     }

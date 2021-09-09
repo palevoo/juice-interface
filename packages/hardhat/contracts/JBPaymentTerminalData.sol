@@ -10,8 +10,7 @@ import "./libraries/SplitsGroups.sol";
 import "./libraries/FundingCycleMetadataResolver.sol";
 
 // Inheritance
-import "./interfaces/ITerminalV2DataLayer.sol";
-import "./interfaces/ITerminalDataLayer.sol";
+import "./interfaces/IJBPaymentTerminalData.sol";
 import "./abstract/Operatable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -21,23 +20,21 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
   This contract stitches together funding cycles and treasury tokens. It makes sure all activity is accounted for and correct. 
 
   @dev 
-  Each project can only have one terminal registered at a time with the TerminalDirectory. This is how the outside world knows where to send money when trying to pay a project.
+  Each project can only have one terminal registered at a time with the JBDirectory. This is how the outside world knows where to send money when trying to pay a project.
   The project's currently set terminal is the only contract that can interact with the FundingCycles and TicketBooth contracts on behalf of the project.
 
-  The project's currently set terminal is also the contract that will receive payments by default when the outside world references directly from the TerminalDirectory.
+  The project's currently set terminal is also the contract that will receive payments by default when the outside world references directly from the JBDirectory.
   Since this contract doesn't deal with money directly, it will immedeiately forward payments to appropriate functions in the payment layer if it receives external calls via ITerminal methods `pay` or `addToBalance`.
   
   Inherits from:
 
-  ITerminalV2DataLayer - general interface for the methods in this contract that change the blockchain's state according to the Juicebox protocol's rules.
-  ITerminalDataLayer - conforms to ITerminal, which allows projects to migrate to this contract from other ITerminals (like TerminalV1), and to facilitate a project's future migration decisions.
-  Ownable - the owner of this contract can specify its payment layer contract, and add new ITerminals to an allow list that projects currently using this terminal can migrate to.
+  IJBPaymentTerminalData - general interface for the methods in this contract that change the blockchain's state according to the Juicebox protocol's rules.
   Operatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
+  Ownable - the owner of this contract can specify its payment layer contract, and add new ITerminals to an allow list that projects currently using this terminal can migrate to.
   ReentrencyGuard - several function in this contract shouldn't be accessible recursively.
 */
-contract TerminalV2DataLayer is
-    ITerminalV2DataLayer,
-    ITerminalDataLayer,
+contract JBPaymentTerminalData is
+    IJBPaymentTerminalData,
     Operatable,
     Ownable,
     ReentrancyGuard
@@ -46,8 +43,8 @@ contract TerminalV2DataLayer is
     using FundingCycleMetadataResolver for FundingCycle;
 
     // Modifier to only allow the payment layer to call the function.
-    modifier onlyPaymentLayer() {
-        require(msg.sender == address(paymentLayer), "TV2DL: UNAUTHORIZED");
+    modifier onlyPaymentTerminal() {
+        require(msg.sender == address(paymentTerminal), "TV2DL: UNAUTHORIZED");
         _;
     }
 
@@ -67,37 +64,37 @@ contract TerminalV2DataLayer is
       @notice 
       The Projects contract which mints ERC-721's that represent project ownership.
     */
-    IProjects public immutable override projects;
+    IJBProjects public immutable override projects;
 
     /** 
       @notice 
       The contract storing all funding cycle configurations.
     */
-    IFundingCycles public immutable override fundingCycles;
+    IJBFundingCycleStore public immutable override fundingCycleStore;
 
     /** 
       @notice 
       The contract that manages token minting and burning.
     */
-    ITicketBooth public immutable override ticketBooth;
+    IJBTokenStore public immutable override tokenStore;
 
     /** 
       @notice 
       The contract that stores splits for each project.
     */
-    ISplitsStore public immutable override splitsStore;
+    IJBSplitsStore public immutable override splitsStore;
 
     /** 
       @notice 
       The contract that exposes price feeds.
     */
-    IPrices public immutable override prices;
+    IJBPrices public immutable override prices;
 
     /** 
       @notice 
       The directory of terminals.
     */
-    ITerminalDirectory public immutable override terminalDirectory;
+    IJBDirectory public immutable override directory;
 
     //*********************************************************************//
     // --------------------- public stored properties -------------------- //
@@ -115,19 +112,6 @@ contract TerminalV2DataLayer is
       @return The ETH balance of the specified project.
     */
     mapping(uint256 => uint256) public override balanceOf;
-
-    /** 
-      @notice 
-      Whether or not a particular contract is available for projects to migrate their funds to.
-
-      @dev
-      [_contractAddress] 
-
-      _contractAddress The ITerminal address of the contract that is either allowed or not.
-
-      @return A boolean indicating if migration is allowed to the specified address.
-    */
-    mapping(ITerminal => bool) public override migrationIsAllowed;
 
     /**
       @notice 
@@ -149,7 +133,7 @@ contract TerminalV2DataLayer is
       @notice 
       The contract that stores funds, and manages inflows/outflows.
     */
-    ITerminalV2PaymentLayer public override paymentLayer;
+    IJBTerminal public override paymentTerminal;
 
     /** 
       @notice 
@@ -179,7 +163,9 @@ contract TerminalV2DataLayer is
         returns (uint256)
     {
         // Get a reference to the project's current funding cycle.
-        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+        FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
+            _projectId
+        );
 
         // There's no overflow if there's no funding cycle.
         if (_fundingCycle.number == 0) return 0;
@@ -206,7 +192,7 @@ contract TerminalV2DataLayer is
             _reservedTokenAmountFrom(
                 _processedTokenTrackerOf[_projectId],
                 _reservedRate,
-                ticketBooth.totalSupplyOf(_projectId)
+                tokenStore.totalSupplyOf(_projectId)
             );
     }
 
@@ -229,7 +215,7 @@ contract TerminalV2DataLayer is
     {
         return
             _claimableOverflowOf(
-                fundingCycles.currentOf(_projectId),
+                fundingCycleStore.currentOf(_projectId),
                 _tokenCount
             );
     }
@@ -241,27 +227,27 @@ contract TerminalV2DataLayer is
     /**
       @param _operatorStore A contract storing operator assignments.
       @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
-      @param _fundingCycles The contract storing all funding cycle configurations.
-      @param _ticketBooth The contract that manages token minting and burning.
+      @param _fundingCycleStore The contract storing all funding cycle configurations.
+      @param _tokenStore The contract that manages token minting and burning.
       @param _splitsStore The contract that stores splits for each project.
       @param _prices The contract that exposes price feeds.
-      @param _terminalDirectory The directory of terminals.
+      @param _directory The directory of terminals.
     */
     constructor(
         IOperatorStore _operatorStore,
-        IProjects _projects,
-        IFundingCycles _fundingCycles,
-        ITicketBooth _ticketBooth,
-        ISplitsStore _splitsStore,
-        IPrices _prices,
-        ITerminalDirectory _terminalDirectory
+        IJBProjects _projects,
+        IJBFundingCycleStore _fundingCycleStore,
+        IJBTokenStore _tokenStore,
+        IJBSplitsStore _splitsStore,
+        IJBPrices _prices,
+        IJBDirectory _directory
     ) Operatable(_operatorStore) {
         projects = _projects;
-        fundingCycles = _fundingCycles;
-        ticketBooth = _ticketBooth;
+        fundingCycleStore = _fundingCycleStore;
+        tokenStore = _tokenStore;
         splitsStore = _splitsStore;
         prices = _prices;
-        terminalDirectory = _terminalDirectory;
+        directory = _directory;
     }
 
     //*********************************************************************//
@@ -308,7 +294,7 @@ contract TerminalV2DataLayer is
         @dev _metadata.pauseBurn Whether or not the burn functionality should be paused during this cycle.
         @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
-        @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
+        @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IJBFundingCycleDataSource.
       @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
       @param _payoutSplits Any payout splits to set.
       @param _reservedTokenSplits Any reserved token splits to set.
@@ -330,7 +316,12 @@ contract TerminalV2DataLayer is
 
         // Create the project for the owner. This this contract as the project's terminal,
         // which will give it exclusive access to manage the project's funding cycles and tokens.
-        uint256 _projectId = projects.create(_owner, _handle, _uri, this);
+        uint256 _projectId = projects.create(
+            _owner,
+            _handle,
+            _uri,
+            paymentTerminal
+        );
 
         _configure(
             _projectId,
@@ -377,7 +368,7 @@ contract TerminalV2DataLayer is
         @dev _metadata.pauseBurn Whether or not the burn functionality should be paused during this cycle.
         @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
-        @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IFundingCycleDataSource.
+        @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IJBFundingCycleDataSource.
       @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
       @param _payoutSplits Any payout splits to set.
       @param _reservedTokenSplits Any reserved token splits to set.
@@ -410,12 +401,11 @@ contract TerminalV2DataLayer is
         // All reserved tokens must be minted before configuring.
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
-            ticketBooth.totalSupplyOf(_projectId)
+            tokenStore.totalSupplyOf(_projectId)
         ) _distributeReservedTokens(_projectId, "");
 
         // Configure the active project if its tokens have yet to be minted.
-        bool _shouldConfigureActive = ticketBooth.totalSupplyOf(_projectId) ==
-            0;
+        bool _shouldConfigureActive = tokenStore.totalSupplyOf(_projectId) == 0;
 
         return
             _configure(
@@ -473,7 +463,9 @@ contract TerminalV2DataLayer is
         require(_amount > 0, "TV2DL: NO_OP");
 
         // Get a reference to the project's current funding cycle.
-        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+        FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
+            _projectId
+        );
 
         // The current funding cycle must not be paused.
         require(_fundingCycle.mintPaused(), "TV2DL: PAUSED");
@@ -481,7 +473,7 @@ contract TerminalV2DataLayer is
         // If a weight isn't specified, get the current funding cycle to read the weight from. If there's no current funding cycle, use the base weight.
         _weight = _weight > 0 ? _weight : _fundingCycle.number > 0
             ? _fundingCycle.weight
-            : fundingCycles.BASE_WEIGHT();
+            : fundingCycleStore.BASE_WEIGHT();
 
         // Multiply the amount with the weight to determine the number of tokens to mint.
         tokenCount = PRBMathUD60x18.mul(
@@ -495,7 +487,7 @@ contract TerminalV2DataLayer is
             int256(tokenCount);
 
         // Redeem the tokens, which burns them.
-        ticketBooth.print(
+        tokenStore.mint(
             _beneficiary,
             _projectId,
             tokenCount,
@@ -548,7 +540,9 @@ contract TerminalV2DataLayer is
         require(_tokenCount > 0, "TV2DL: NO_OP");
 
         // Get a reference to the project's current funding cycle.
-        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+        FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
+            _projectId
+        );
 
         // The current funding cycle must not be paused.
         require(_fundingCycle.burnPaused(), "TV2DL: PAUSED");
@@ -556,8 +550,8 @@ contract TerminalV2DataLayer is
         // Update the token tracker so that reserved tokens will still be correctly mintable.
         _subtractFromTokenTracker(_projectId, _tokenCount);
 
-        // Redeem the tokens, which burns them.
-        ticketBooth.redeem(
+        // Burn the tokens.
+        tokenStore.burn(
             _holder,
             _projectId,
             _tokenCount,
@@ -596,19 +590,14 @@ contract TerminalV2DataLayer is
 
       @param _projectId The ID of the project that is being migrated to this terminal.
     */
-    function prepForMigrationOf(uint256 _projectId)
+    function recordPrepForMigrationOf(uint256 _projectId)
         external
         override
-        nonReentrant
+        onlyPaymentTerminal
     {
-        // This function can only be called if this contract isn't already the project's current terminal.
-        require(
-            terminalDirectory.terminalOf(_projectId) != this,
-            "TV2DL: NOT_ALLOWED"
-        );
         // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
         _processedTokenTrackerOf[_projectId] = int256(
-            ticketBooth.totalSupplyOf(_projectId)
+            tokenStore.totalSupplyOf(_projectId)
         );
     }
 
@@ -657,7 +646,7 @@ contract TerminalV2DataLayer is
     )
         public
         override
-        onlyPaymentLayer
+        onlyPaymentTerminal
         returns (
             FundingCycle memory fundingCycle,
             uint256 weight,
@@ -666,7 +655,7 @@ contract TerminalV2DataLayer is
         )
     {
         // Get a reference to the current funding cycle for the project.
-        fundingCycle = fundingCycles.currentOf(_projectId);
+        fundingCycle = fundingCycleStore.currentOf(_projectId);
 
         // The project must have a funding cycle configured.
         require(fundingCycle.number > 0, "TV2DL: NOT_FOUND");
@@ -722,7 +711,7 @@ contract TerminalV2DataLayer is
             // Mint tokens if needed.
             if (tokenCount > 0) {
                 // Mint the project's tokens for the beneficiary.
-                ticketBooth.print(
+                tokenStore.mint(
                     address(uint160(_preferUnstakedTokensAndBeneficiary >> 1)),
                     _projectId,
                     tokenCount,
@@ -782,11 +771,11 @@ contract TerminalV2DataLayer is
     )
         external
         override
-        onlyPaymentLayer
+        onlyPaymentTerminal
         returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount)
     {
         // Registers the funds as withdrawn and gets the ID of the funding cycle during which this withdrawal is being made.
-        fundingCycle = fundingCycles.tap(_projectId, _amount);
+        fundingCycle = fundingCycleStore.tap(_projectId, _amount);
 
         // Funds cannot be withdrawn if there's no funding cycle.
         require(fundingCycle.id > 0, "TV2DL: NOT_FOUND");
@@ -840,11 +829,11 @@ contract TerminalV2DataLayer is
     )
         external
         override
-        onlyPaymentLayer
+        onlyPaymentTerminal
         returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount)
     {
         // Get a reference to the project's current funding cycle.
-        fundingCycle = fundingCycles.currentOf(_projectId);
+        fundingCycle = fundingCycleStore.currentOf(_projectId);
 
         // Make sure the currencies match.
         require(
@@ -915,7 +904,7 @@ contract TerminalV2DataLayer is
     )
         external
         override
-        onlyPaymentLayer
+        onlyPaymentTerminal
         returns (
             FundingCycle memory fundingCycle,
             uint256 claimAmount,
@@ -924,12 +913,12 @@ contract TerminalV2DataLayer is
     {
         // The holder must have the specified number of the project's tokens.
         require(
-            ticketBooth.balanceOf(_holder, _projectId) >= _tokenCount,
+            tokenStore.balanceOf(_holder, _projectId) >= _tokenCount,
             "TV2DL: INSUFFICIENT_TOKENS"
         );
 
         // Get a reference to the project's current funding cycle.
-        fundingCycle = fundingCycles.currentOf(_projectId);
+        fundingCycle = fundingCycleStore.currentOf(_projectId);
 
         // The current funding cycle must not be paused.
         require(!fundingCycle.redeemPaused(), "TV2DL: PAUSED");
@@ -971,7 +960,7 @@ contract TerminalV2DataLayer is
         if (_tokenCount > 0) {
             // Update the token tracker so that reserved tokens will still be correctly mintable.
             _subtractFromTokenTracker(_projectId, _tokenCount);
-            ticketBooth.redeem(_holder, _projectId, _tokenCount, true);
+            tokenStore.burn(_holder, _projectId, _tokenCount, true);
         }
 
         // Remove the redeemed funds from the project's balance.
@@ -1003,19 +992,16 @@ contract TerminalV2DataLayer is
       @param _projectId The ID of the project being migrated.
       @param _to The contract that will gain the project's funds.
     */
-    function recordMigration(uint256 _projectId, ITerminal _to)
+    function recordMigration(uint256 _projectId, IJBTerminal _to)
         external
         override
-        onlyPaymentLayer
+        onlyPaymentTerminal
         returns (uint256 balance)
     {
-        // The migration destination must be allowed.
-        require(migrationIsAllowed[_to], "TV2DL: NOT_ALLOWED");
-
         // All reserved tokens must be minted before migrating.
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
-            ticketBooth.totalSupplyOf(_projectId)
+            tokenStore.totalSupplyOf(_projectId)
         ) _distributeReservedTokens(_projectId, "");
 
         // Get a reference to the project's currently recorded balance.
@@ -1025,7 +1011,7 @@ contract TerminalV2DataLayer is
         balanceOf[_projectId] = 0;
 
         // Switch the terminal that the terminal directory will point to for this project.
-        terminalDirectory.setTerminal(_projectId, _to);
+        directory.setTerminal(_projectId, _to);
     }
 
     /**
@@ -1041,7 +1027,7 @@ contract TerminalV2DataLayer is
     function recordAddedBalance(uint256 _amount, uint256 _projectId)
         external
         override
-        onlyPaymentLayer
+        onlyPaymentTerminal
     {
         // Set the balance.
         balanceOf[_projectId] = balanceOf[_projectId] + _amount;
@@ -1053,88 +1039,22 @@ contract TerminalV2DataLayer is
 
     /**
       @notice
-      Adds a Terminal address to the allow list that project owners can migrate its funds and treasury operations to.
-
-      @dev
-      Only this contract's owner can add a contract to the migration allow list.
-
-      @param _terminal The terminal contract to allow.
-    */
-    function allowMigration(ITerminal _terminal) external override onlyOwner {
-        // Toggle the contract as allowed.
-        migrationIsAllowed[_terminal] = !migrationIsAllowed[_terminal];
-
-        emit AllowMigration(_terminal);
-    }
-
-    /**
-      @notice
       Sets the contract that is operating as this contract's payment layer.
 
       @dev
       Only this contract's owner can set this contract's payment layer.
 
-      @param _paymentLayer The payment layer contract to set.
+      @param _paymentTerminal The payment layer contract to set.
     */
-    function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer)
+    function setPaymentTerminal(IJBTerminal _paymentTerminal)
         external
         override
         onlyOwner
     {
         // Set the contract.
-        paymentLayer = _paymentLayer;
+        paymentTerminal = _paymentTerminal;
 
-        emit SetPaymentLayer(_paymentLayer, msg.sender);
-    }
-
-    //*********************************************************************//
-    // --- external transactions that relay funds to the payment layer --- //
-    //*********************************************************************//
-
-    /**
-      @notice
-      This call forwards all ETH received to the payment layer and does not modify state.
-
-      @dev
-      This call should never be called by the payment layer.
-
-      @param _projectId The ID of the project being contribute to.
-      @param _beneficiary The address to mint tokens for.
-      @param _memo A memo that will be included in the published event.
-      @param _preferUnstakedTokens A flag indicating whether the request prefers to redeem tokens unstaked rather than staked.
-
-      @return The number of the funding cycle that the payment was made during.
-    */
-    function pay(
-        uint256 _projectId,
-        address _beneficiary,
-        string calldata _memo,
-        bool _preferUnstakedTokens
-    ) external payable override returns (uint256) {
-        // This contract should forward the parameters and all ETH received to the payment layer.
-        return
-            paymentLayer.pay{value: msg.value}(
-                _projectId,
-                _beneficiary,
-                0,
-                _preferUnstakedTokens,
-                _memo,
-                bytes("")
-            );
-    }
-
-    /**
-      @notice
-      This call forwards all ETH received to the payment layer and does not modify state.
-
-      @dev
-      This call should never be called by the payment layer.
-
-      @param _projectId The ID of the project being funded.
-    */
-    function addToBalance(uint256 _projectId) external payable override {
-        // This contract should forward the parameters and all ETH received to the payment layer.
-        paymentLayer.addToBalance{value: msg.value}(_projectId);
+        emit SetPaymentTerminal(_paymentTerminal, msg.sender);
     }
 
     //*********************************************************************//
@@ -1199,13 +1119,15 @@ contract TerminalV2DataLayer is
         returns (uint256 count)
     {
         // Get the current funding cycle to read the reserved rate from.
-        FundingCycle memory _fundingCycle = fundingCycles.currentOf(_projectId);
+        FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
+            _projectId
+        );
 
         // There aren't any reserved tokens to mint and distribute if there is no funding cycle.
         if (_fundingCycle.number == 0) return 0;
 
         // Get a reference to new total supply of tokens before minting reserved tokens.
-        uint256 _totalTokens = ticketBooth.totalSupplyOf(_projectId);
+        uint256 _totalTokens = tokenStore.totalSupplyOf(_projectId);
 
         // Get a reference to the number of tokens that need to be minted.
         count = _reservedTokenAmountFrom(
@@ -1227,7 +1149,7 @@ contract TerminalV2DataLayer is
 
         // Mint any leftover tokens to the project owner.
         if (_leftoverTokenCount > 0)
-            ticketBooth.print(_owner, _projectId, _leftoverTokenCount, false);
+            tokenStore.mint(_owner, _projectId, _leftoverTokenCount, false);
 
         emit DistributeReservedTokens(
             _fundingCycle.number,
@@ -1255,7 +1177,7 @@ contract TerminalV2DataLayer is
         if (_currentOverflow == 0) return 0;
 
         // Get the total number of tokens in circulation.
-        uint256 _totalSupply = ticketBooth.totalSupplyOf(
+        uint256 _totalSupply = tokenStore.totalSupplyOf(
             _fundingCycle.projectId
         );
 
@@ -1281,7 +1203,7 @@ contract TerminalV2DataLayer is
         );
 
         // Use the ballot redemption rate if the queued cycle is pending approval according to the previous funding cycle's ballot.
-        uint256 _redemptionRate = fundingCycles.currentBallotStateOf(
+        uint256 _redemptionRate = fundingCycleStore.currentBallotStateOf(
             _fundingCycle.projectId
         ) == BallotState.Active
             ? _fundingCycle.ballotRedemptionRate()
@@ -1378,7 +1300,7 @@ contract TerminalV2DataLayer is
 
             // Mints tokens for the split if needed.
             if (_tokenCount > 0)
-                ticketBooth.print(
+                tokenStore.mint(
                     // If a projectId is set in the split, set the project's owner as the beneficiary.
                     // Otherwise use the split's beneficiary.
                     _split.projectId != 0
@@ -1492,7 +1414,7 @@ contract TerminalV2DataLayer is
         bool _shouldConfigureActive
     ) private returns (uint256) {
         // Configure the funding cycle's properties.
-        FundingCycle memory _fundingCycle = fundingCycles.configure(
+        FundingCycle memory _fundingCycle = fundingCycleStore.configure(
             _projectId,
             _properties,
             _packedMetadata,

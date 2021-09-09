@@ -4,16 +4,15 @@ pragma solidity 0.8.6;
 import "./libraries/Operations2.sol";
 
 // Inheritance
-import "./interfaces/ISplitsStore.sol";
+import "./interfaces/IJBSplitsStore.sol";
 import "./abstract/Operatable.sol";
-import "./abstract/TerminalUtility.sol";
+import "./abstract/JBTerminalUtility.sol";
 
 /**
   @notice
   Stores splits for each project.
-
 */
-contract SplitsStore is ISplitsStore, Operatable, TerminalUtility {
+contract JBSplitsStore is IJBSplitsStore, Operatable, JBTerminalUtility {
     // --- private stored properties --- //
 
     // All splits for each project ID's configurations.
@@ -49,14 +48,14 @@ contract SplitsStore is ISplitsStore, Operatable, TerminalUtility {
 
     /** 
       @param _operatorStore A contract storing operator assignments.
-      @param _terminalDirectory The directory of terminals.
+      @param _jbDirectory The directory of terminals.
       @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
     */
     constructor(
         IOperatorStore _operatorStore,
-        ITerminalDirectory _terminalDirectory,
+        IJBDirectory _jbDirectory,
         IProjects _projects
-    ) Operatable(_operatorStore) TerminalUtility(_terminalDirectory) {
+    ) Operatable(_operatorStore) JBTerminalUtility(_jbDirectory) {
         projects = _projects;
     }
 
@@ -89,11 +88,11 @@ contract SplitsStore is ISplitsStore, Operatable, TerminalUtility {
             projects.ownerOf(_projectId),
             _projectId,
             Operations2.SetSplits,
-            address(terminalDirectory.terminalOf(_projectId))
+            address(directory.terminalOf(_projectId))
         )
     {
         // There must be something to do.
-        require(_splits.length > 0, "SplitsStore::set: NO_OP");
+        require(_splits.length > 0, "JBSplitsStore::set: NO_OP");
 
         // Get a reference to the project's current splits.
         Split[] memory _currentSplits = _splitsOf[_projectId][_configuration][
@@ -117,7 +116,7 @@ contract SplitsStore is ISplitsStore, Operatable, TerminalUtility {
                         _currentSplits[_i].lockedUntil
                     ) _includesLocked = true;
                 }
-                require(_includesLocked, "SplitsStore::set: SOME_LOCKED");
+                require(_includesLocked, "JBSplitsStore::set: SOME_LOCKED");
             }
         }
 
@@ -131,14 +130,14 @@ contract SplitsStore is ISplitsStore, Operatable, TerminalUtility {
             // The percent should be greater than 0.
             require(
                 _splits[_i].percent > 0,
-                "SplitsStore::set: BAD_SPLIT_PERCENT"
+                "JBSplitsStore::set: BAD_SPLIT_PERCENT"
             );
 
             // The allocator and the beneficiary shouldn't both be the zero address.
             require(
                 _splits[_i].allocator != ISplitAllocator(address(0)) ||
                     _splits[_i].beneficiary != address(0),
-                "SplitsStore::set: ZERO_ADDRESS"
+                "JBSplitsStore::set: ZERO_ADDRESS"
             );
 
             // Add to the total percents.
@@ -147,7 +146,7 @@ contract SplitsStore is ISplitsStore, Operatable, TerminalUtility {
             // The total percent should be less than 10000.
             require(
                 _percentTotal <= 10000,
-                "SplitsStore::set: BAD_TOTAL_PERCENT"
+                "JBSplitsStore::set: BAD_TOTAL_PERCENT"
             );
             // Push the new split into the project's list of splits.
             _splitsOf[_projectId][_configuration][_group].push(_splits[_i]);

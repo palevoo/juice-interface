@@ -42,11 +42,8 @@ contract ProxyPaymentAddress is IProxyPaymentAddress, Ownable {
     }
 
     // Receive funds and hold them in the contract until they are ready to be transferred.
-    receive() external payable { 
-        emit Receive(
-            msg.sender,
-            msg.value
-        );
+    receive() external payable {
+        emit Receive(msg.sender, msg.value);
     }
 
     // Transfers all funds held in the contract to the terminal of the corresponding project.
@@ -55,35 +52,27 @@ contract ProxyPaymentAddress is IProxyPaymentAddress, Ownable {
 
         terminalDirectory.terminalOf(projectId).pay{value: amount}(
             projectId,
-            /*_beneficiary=*/address(this),
+            /*_beneficiary=*/
+            address(this),
             memo,
-            /*_preferUnstakedTickets=*/false
+            /*_preferUnstakedTickets=*/
+            false
         );
 
-        emit Tap(
-            msg.sender,
-            amount
-        ); 
+        emit Tap(msg.sender, amount);
     }
 
     /** 
       @notice Transfers tickets held by this contract to a beneficiary.
       @param _beneficiary Address of the beneficiary tickets will be transferred to.
     */
-    function transferTickets(address _beneficiary, uint256 _amount) external override onlyOwner {
-        ticketBooth.transfer(
-            address(this),
-            projectId,
-            _amount,
-            _beneficiary
-        );
+    function transferTickets(address _beneficiary, uint256 _amount)
+        external
+        override
+        onlyOwner
+    {
+        ticketBooth.transfer(address(this), projectId, _amount, _beneficiary);
 
-        emit TransferTickets(
-            msg.sender,
-            _beneficiary,
-            projectId,
-            _amount
-        );            
+        emit TransferTickets(msg.sender, _beneficiary, projectId, _amount);
     }
-
 }

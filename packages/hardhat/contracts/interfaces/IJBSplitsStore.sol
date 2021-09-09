@@ -14,7 +14,7 @@ struct Split {
     uint56 projectId;
 }
 
-interface ISplitsStore {
+interface IJBSplitsStore {
     event SetSplit(
         uint256 indexed projectId,
         uint256 indexed configuration,

@@ -6,12 +6,11 @@ import "./ITicketBooth.sol";
 import "./IProxyPaymentAddress.sol";
 
 interface IProxyPaymentAddressManager {
-
     event Deploy(
         uint256 indexed projectId,
         string memo,
         address indexed caller
-    );       
+    );
 
     function terminalDirectory() external returns (ITerminalDirectory);
 
@@ -20,8 +19,9 @@ interface IProxyPaymentAddressManager {
     function addressesOf(uint256 _projectId)
         external
         view
-        returns (IProxyPaymentAddress[] memory);    
+        returns (IProxyPaymentAddress[] memory);
 
-    function deploy(uint256 _projectId, string memory _memo) external returns(address);
-
+    function deploy(uint256 _projectId, string memory _memo)
+        external
+        returns (address);
 }

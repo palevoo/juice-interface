@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./interfaces/ITokenStore.sol";
+import "./interfaces/IJBTokenStore.sol";
 import "./abstract/Operatable.sol";
-import "./abstract/BootloadableTerminalUtility.sol";
+import "./abstract/JBTerminalUtility.sol";
 
 import "./libraries/Operations.sol";
 
@@ -20,7 +20,7 @@ import "./Token.sol";
   @dev
   The total supply of a project's tokens and the balance of each account are calculated in this contract.
 */
-contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
+contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
     // --- public immutable stored properties --- //
 
     /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
@@ -97,17 +97,13 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
     /** 
       @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
       @param _operatorStore A contract storing operator assignments.
-      @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
+      @param _directory A directory of a project's current Juicebox terminal to receive payments in.
     */
     constructor(
         IProjects _projects,
         IOperatorStore _operatorStore,
-        ITerminalDirectory _terminalDirectory,
-        address _bootloader
-    )
-        Operatable(_operatorStore)
-        BootloadableTerminalUtility(_terminalDirectory, _bootloader)
-    {
+        IJBDirectory _directory
+    ) Operatable(_operatorStore) JBTerminalUtility(_directory) {
         projects = _projects;
     }
 
@@ -136,15 +132,18 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         )
     {
         // There must be a name.
-        require((bytes(_name).length > 0), "TokenStore::issue: EMPTY_NAME");
+        require((bytes(_name).length > 0), "JBTokenStore::issue: EMPTY_NAME");
 
         // There must be a symbol.
-        require((bytes(_symbol).length > 0), "TokenStore::issue: EMPTY_SYMBOL");
+        require(
+            (bytes(_symbol).length > 0),
+            "JBTokenStore::issue: EMPTY_SYMBOL"
+        );
 
         // Only one ERC20 token can be issued.
         require(
             tokenOf[_projectId] == IToken(address(0)),
-            "TokenStore::issue: ALREADY_ISSUED"
+            "JBTokenStore::issue: ALREADY_ISSUED"
         );
 
         // Create the contract in this TerminalV1 contract in order to have mint and burn privileges.
@@ -171,9 +170,9 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         uint256 _projectId,
         uint256 _amount,
         bool _preferUnstakedTokens
-    ) external override onlyTerminalOrBootloader(_projectId) {
+    ) external override onlyTerminal(_projectId) {
         // An amount must be specified.
-        require(_amount > 0, "TokenStore::mint: NO_OP");
+        require(_amount > 0, "JBTokenStore::mint: NO_OP");
 
         // Get a reference to the project's ERC20 tokens.
         IToken _token = tokenOf[_projectId];
@@ -215,13 +214,13 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
       @param _holder The address that owns the tokens being burned.
       @param _projectId The ID of the project of the tokens being burned.
       @param _amount The amount of tokens being burned.
-      @param _preferUnstaked If the preference is to burn tokens that have been converted to ERC-20s.
+      @param _preferUnstakedTokens If the preference is to burn tokens that have been converted to ERC-20s.
     */
     function burn(
         address _holder,
         uint256 _projectId,
         uint256 _amount,
-        bool _preferUnstaked
+        bool _preferUnstakedTokens
     ) external override onlyTerminal(_projectId) {
         // Get a reference to the project's ERC20 tokens.
         IToken _token = tokenOf[_projectId];
@@ -244,7 +243,7 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
                     _unlockedStakedBalance >= _amount - _unstakedBalanceOf) ||
                 (_amount >= _unlockedStakedBalance &&
                     _unstakedBalanceOf >= _amount - _unlockedStakedBalance),
-            "TokenStore::redeem: INSUFFICIENT_FUNDS"
+            "JBTokenStore::redeem: INSUFFICIENT_FUNDS"
         );
 
         // The amount of tokens to burn.
@@ -254,7 +253,7 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         if (_unstakedBalanceOf == 0) {
             _unstakedTokensToBurn = 0;
             // If prefer converted, redeem tokens before redeeming staked tokens.
-        } else if (_preferUnstaked) {
+        } else if (_preferUnstakedTokens) {
             _unstakedTokensToBurn = _unstakedBalanceOf >= _amount
                 ? _amount
                 : _unstakedBalanceOf;
@@ -286,7 +285,7 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
             _projectId,
             _amount,
             _unlockedStakedBalance,
-            _preferUnstaked,
+            _preferUnstakedTokens,
             msg.sender
         );
     }
@@ -319,7 +318,7 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         IToken _token = tokenOf[_projectId];
 
         // Tokens must have been issued.
-        require(_token != IToken(address(0)), "TokenStore::stake: NOT_FOUND");
+        require(_token != IToken(address(0)), "JBTokenStore::stake: NOT_FOUND");
 
         // Get a reference to the holder's current balance.
         uint256 _unstakedBalanceOf = _token.balanceOf(_holder);
@@ -327,7 +326,7 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         // There must be enough balance to stake.
         require(
             _unstakedBalanceOf >= _amount,
-            "TokenStore::stake: INSUFFICIENT_FUNDS"
+            "JBTokenStore::stake: INSUFFICIENT_FUNDS"
         );
 
         // Burn the equivalent amount of ERC20s.
@@ -374,7 +373,10 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         IToken _token = tokenOf[_projectId];
 
         // Tokens must have been issued.
-        require(_token != IToken(address(0)), "TokenStore::unstake: NOT_FOUND");
+        require(
+            _token != IToken(address(0)),
+            "JBTokenStore::unstake: NOT_FOUND"
+        );
 
         // Get a reference to the amount of unstaked tokens.
         uint256 _unlockedStakedTokens = stakedBalanceOf[_holder][_projectId] -
@@ -383,7 +385,7 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         // There must be enough unlocked staked tokens to unstake.
         require(
             _unlockedStakedTokens >= _amount,
-            "TokenStore::unstake: INSUFFICIENT_FUNDS"
+            "JBTokenStore::unstake: INSUFFICIENT_FUNDS"
         );
 
         // Subtract the unstaked amount from the holder's balance.
@@ -427,14 +429,14 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         )
     {
         // Amount must be greater than 0.
-        require(_amount > 0, "TokenStore::lock: NO_OP");
+        require(_amount > 0, "JBTokenStore::lock: NO_OP");
 
         // The holder must have enough tokens to lock.
         require(
             stakedBalanceOf[_holder][_projectId] -
                 lockedBalanceOf[_holder][_projectId] >=
                 _amount,
-            "TokenStore::lock: INSUFFICIENT_FUNDS"
+            "JBTokenStore::lock: INSUFFICIENT_FUNDS"
         );
 
         // Update the lock.
@@ -465,12 +467,12 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         uint256 _amount
     ) external override {
         // Amount must be greater than 0.
-        require(_amount > 0, "TokenStore::unlock: NO_OP");
+        require(_amount > 0, "JBTokenStore::unlock: NO_OP");
 
         // There must be enough locked tokens to unlock.
         require(
             lockedBalanceBy[msg.sender][_holder][_projectId] >= _amount,
-            "TokenStore::unlock: INSUFFICIENT_FUNDS"
+            "JBTokenStore::unlock: INSUFFICIENT_FUNDS"
         );
 
         // Update the lock.
@@ -511,13 +513,16 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         )
     {
         // Can't transfer to the zero address.
-        require(_recipient != address(0), "TokenStore::transfer: ZERO_ADDRESS");
+        require(
+            _recipient != address(0),
+            "JBTokenStore::transfer: ZERO_ADDRESS"
+        );
 
         // An address can't transfer to itself.
-        require(_holder != _recipient, "TokenStore::transfer: IDENTITY");
+        require(_holder != _recipient, "JBTokenStore::transfer: IDENTITY");
 
         // There must be an amount to transfer.
-        require(_amount > 0, "TokenStore::transfer: NO_OP");
+        require(_amount > 0, "JBTokenStore::transfer: NO_OP");
 
         // Get a reference to the amount of unlocked staked tokens.
         uint256 _unlockedStakedTokens = stakedBalanceOf[_holder][_projectId] -
@@ -526,7 +531,7 @@ contract TokenStore is BootloadableTerminalUtility, Operatable, ITokenStore {
         // There must be enough unlocked staked tokens to transfer.
         require(
             _amount <= _unlockedStakedTokens,
-            "TokenStore::transfer: INSUFFICIENT_FUNDS"
+            "JBTokenStore::transfer: INSUFFICIENT_FUNDS"
         );
 
         // Subtract from the holder.

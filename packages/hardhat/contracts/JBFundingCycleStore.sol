@@ -3,14 +3,14 @@ pragma solidity >=0.8.0;
 
 import "@paulrberg/contracts/math/PRBMath.sol";
 
-import "./interfaces/IFundingCycleStore.sol";
+import "./interfaces/IJBFundingCycleStore.sol";
 import "./interfaces/IPrices.sol";
-import "./abstract/BootloadableTerminalUtility.sol";
+import "./abstract/JBTerminalUtility.sol";
 
 /** 
   @notice Manage funding cycle configurations, accounting, and scheduling.
 */
-contract FundingCycleStore is BootloadableTerminalUtility, IFundingCycleStore {
+contract JBFundingCycleStore is JBTerminalUtility, IJBFundingCycleStore {
     // --- private stored contants --- //
 
     // The number of seconds in a day.
@@ -63,7 +63,7 @@ contract FundingCycleStore is BootloadableTerminalUtility, IFundingCycleStore {
         returns (FundingCycle memory)
     {
         // The funding cycle should exist.
-        require(_fundingCycleId > 0, "FundingCycleStore::get: NOT_FOUND");
+        require(_fundingCycleId > 0, "JBFundingCycleStore::get: NOT_FOUND");
 
         return _getStruct(_fundingCycleId);
     }
@@ -227,11 +227,9 @@ contract FundingCycleStore is BootloadableTerminalUtility, IFundingCycleStore {
     // --- external transactions --- //
 
     /** 
-      @param _terminalDirectory A directory of a project's current Juicebox terminal to receive payments in.
+      @param _directory A directory of a project's current Juicebox terminal to receive payments in.
     */
-    constructor(ITerminalDirectory _terminalDirectory, address _bootloader)
-        BootloadableTerminalUtility(_terminalDirectory, _bootloader)
-    {}
+    constructor(IJBDirectory _directory) JBTerminalUtility(_directory) {}
 
     /**
         @notice 
@@ -389,7 +387,7 @@ contract FundingCycleStore is BootloadableTerminalUtility, IFundingCycleStore {
         uint256 _projectId,
         uint256 _number,
         FundingCycle memory _fundingCycle
-    ) external onlyTerminalOrBootloader(_projectId) {
+    ) external onlyTerminal(_projectId) {
         // Gets the ID of the funding cycle to reconfigure.
         uint256 _fundingCycleId = _idFor(_projectId, _number);
 

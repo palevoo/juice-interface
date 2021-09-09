@@ -51,7 +51,7 @@ contract DirectPaymentAddress is IDirectPaymentAddress {
             : msg.sender;
 
         bool _preferUnstakedTickets = terminalDirectory
-        .unstakedTicketsPreferenceOf(msg.sender);
+            .unstakedTicketsPreferenceOf(msg.sender);
 
         terminalDirectory.terminalOf(projectId).pay{value: msg.value}(
             projectId,

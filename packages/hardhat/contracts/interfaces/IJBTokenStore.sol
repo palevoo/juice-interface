@@ -5,7 +5,7 @@ import "./IProjects.sol";
 import "./IOperatorStore.sol";
 import "./IToken.sol";
 
-interface ITokenStore {
+interface IJBTokenStore {
     event Issue(
         uint256 indexed projectId,
         string name,
@@ -26,7 +26,7 @@ interface ITokenStore {
         uint256 indexed projectId,
         uint256 amount,
         uint256 unlockedStakedBalance,
-        bool preferUnstaked,
+        bool preferUnstakedTokens,
         address caller
     );
 
@@ -115,7 +115,7 @@ interface ITokenStore {
         address _holder,
         uint256 _projectId,
         uint256 _amount,
-        bool _preferUnstaked
+        bool _preferUnstakedTokens
     ) external;
 
     function stake(

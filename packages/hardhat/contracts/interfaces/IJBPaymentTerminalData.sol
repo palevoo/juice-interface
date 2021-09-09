@@ -3,15 +3,15 @@ pragma solidity 0.8.6;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-import "./ITicketBooth.sol";
-import "./IFundingCycles.sol";
-import "./IFundingCycleDataSource.sol";
-import "./IYielder.sol";
-import "./IProjects.sol";
-import "./ISplitsStore.sol";
-import "./ITerminal.sol";
+import "./IJBTokenStore.sol";
+import "./IJBFundingCycleStore.sol";
+import "./IJBProjects.sol";
+import "./IJBSplitsStore.sol";
+import "./IJBTerminal.sol";
 import "./IOperatorStore.sol";
-import "./ITerminalV2PaymentLayer.sol";
+import "./IJBPaymentTerminal.sol";
+import "./IJBFundingCycleDataSource.sol";
+import "./IJBPrices.sol";
 
 struct FundingCycleMetadataV2 {
     uint256 reservedRate;
@@ -24,10 +24,10 @@ struct FundingCycleMetadataV2 {
     bool pauseBurn;
     bool useDataSourceForPay;
     bool useDataSourceForRedeem;
-    IFundingCycleDataSource dataSource;
+    IJBFundingCycleDataSource dataSource;
 }
 
-interface ITerminalV2DataLayer {
+interface IJBPaymentTerminalData {
     event SetOverflowAllowance(
         uint256 indexed projectId,
         uint256 indexed configuration,
@@ -53,8 +53,6 @@ interface ITerminalV2DataLayer {
         address caller
     );
 
-    event AllowMigration(ITerminal terminal);
-
     event MintTokens(
         address indexed beneficiary,
         uint256 indexed projectId,
@@ -74,19 +72,21 @@ interface ITerminalV2DataLayer {
         address caller
     );
 
-    event SetPaymentLayer(ITerminalV2PaymentLayer paymentLayer, address caller);
+    event SetPaymentTerminal(IJBTerminal paymentTerminal, address caller);
 
-    function fundingCycles() external view returns (IFundingCycles);
+    function directory() external view returns (IJBDirectory);
 
-    function ticketBooth() external view returns (ITicketBooth);
+    function fundingCycleStore() external view returns (IJBFundingCycleStore);
 
-    function prices() external view returns (IPrices);
+    function tokenStore() external view returns (IJBTokenStore);
 
-    function splitsStore() external view returns (ISplitsStore);
+    function prices() external view returns (IJBPrices);
 
-    function projects() external view returns (IProjects);
+    function splitsStore() external view returns (IJBSplitsStore);
 
-    function paymentLayer() external view returns (ITerminalV2PaymentLayer);
+    function projects() external view returns (IJBProjects);
+
+    function paymentTerminal() external view returns (IJBTerminal);
 
     function fee() external view returns (uint256);
 
@@ -207,9 +207,11 @@ interface ITerminalV2DataLayer {
         external
         returns (uint256 amount);
 
-    function recordMigration(uint256 _projectId, ITerminal _to)
+    function recordMigration(uint256 _projectId, IJBTerminal _to)
         external
         returns (uint256 balance);
 
-    function setPaymentLayer(ITerminalV2PaymentLayer _paymentLayer) external;
+    function recordPrepForMigrationOf(uint256 _projectId) external;
+
+    function setPaymentTerminal(IJBTerminal _paymentTerminal) external;
 }
