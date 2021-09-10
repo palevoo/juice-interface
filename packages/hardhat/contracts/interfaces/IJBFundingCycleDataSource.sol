@@ -3,8 +3,8 @@ pragma solidity 0.8.6;
 
 import "./IJBFundingCycleStore.sol";
 
-import "./IPayDelegate.sol";
-import "./IRedemptionDelegate.sol";
+import "./IJBPayDelegate.sol";
+import "./IJBRedemptionDelegate.sol";
 
 struct PayDataParam {
     address payer;
@@ -32,7 +32,7 @@ interface IJBFundingCycleDataSource {
         returns (
             uint256 weight,
             string memory memo,
-            IPayDelegate delegate,
+            IJBPayDelegate delegate,
             bytes memory delegateMetadata
         );
 
@@ -41,7 +41,7 @@ interface IJBFundingCycleDataSource {
         returns (
             uint256 amount,
             string memory memo,
-            IRedemptionDelegate delegate,
+            IJBRedemptionDelegate delegate,
             bytes memory delegateMetadata
         );
 }

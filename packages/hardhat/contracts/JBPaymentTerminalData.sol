@@ -647,7 +647,7 @@ contract JBPaymentTerminalData is
         require(!fundingCycle.payPaused(), "JBPaymentTerminalData: PAUSED");
 
         // Save a reference to the delegate to use.
-        IPayDelegate _delegate;
+        IJBPayDelegate _delegate;
 
         // If the funding cycle has configured a data source, use it to derive a weight and memo.
         if (fundingCycle.useDataSourceForPay()) {
@@ -715,23 +715,22 @@ contract JBPaymentTerminalData is
         // TODO: see if we can made didPay easier and safer for people automatically.
         // TODO: wording. subscriber? "Delegate" might overload some ethereum specific terminology.
         // TODO: should delegates be an array?
-        if (_delegate != IPayDelegate(address(0)))
-            _delegate.didPay(
-                DidPayParam(
-                    _payer,
-                    _projectId,
-                    _amount,
-                    weight,
-                    tokenCount,
-                    payable(
-                        address(
-                            uint160(_preferUnstakedTokensAndBeneficiary >> 1)
-                        )
-                    ),
-                    memo,
-                    _delegateMetadata
-                )
+        if (_delegate != IJBPayDelegate(address(0))) {
+            DidPayParam memory _param = DidPayParam(
+                _payer,
+                _projectId,
+                _amount,
+                weight,
+                tokenCount,
+                payable(
+                    address(uint160(_preferUnstakedTokensAndBeneficiary >> 1))
+                ),
+                memo,
+                _delegateMetadata
             );
+            _delegate.didPay(_param);
+            emit DelegateDidPay(_delegate, _param);
+        }
     }
 
     /**
@@ -916,7 +915,7 @@ contract JBPaymentTerminalData is
         require(!fundingCycle.redeemPaused(), "JBPaymentTerminalData: PAUSED");
 
         // Save a reference to the delegate to use.
-        IRedemptionDelegate _delegate;
+        IJBRedemptionDelegate _delegate;
 
         // If the funding cycle has configured a data source, use it to derive a claim amount and memo.
         // TODO: think about using a default data source for default values.
@@ -963,18 +962,19 @@ contract JBPaymentTerminalData is
             balanceOf[_projectId] = balanceOf[_projectId] - claimAmount;
 
         // If a delegate was returned by the data source, issue a callback to it.
-        if (_delegate != IRedemptionDelegate(address(0)))
-            _delegate.didRedeem(
-                DidRedeemParam(
-                    _holder,
-                    _projectId,
-                    _tokenCount,
-                    claimAmount,
-                    _beneficiary,
-                    memo,
-                    _delegateMetadata
-                )
+        if (_delegate != IJBRedemptionDelegate(address(0))) {
+            DidRedeemParam memory _param = DidRedeemParam(
+                _holder,
+                _projectId,
+                _tokenCount,
+                claimAmount,
+                _beneficiary,
+                memo,
+                _delegateMetadata
             );
+            _delegate.didRedeem(_param);
+            emit DelegateDidRedeem(_delegate, _param);
+        }
     }
 
     /**

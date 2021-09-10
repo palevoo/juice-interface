@@ -73,6 +73,13 @@ interface IJBPaymentTerminalData {
 
     event SetPaymentTerminal(IJBTerminal terminal, address caller);
 
+    event DelegateDidPay(IJBPayDelegate indexed delegate, DidPayParam param);
+
+    event DelegateDidRedeem(
+        IJBRedemptionDelegate indexed delegate,
+        DidRedeemParam param
+    );
+
     function directory() external view returns (IJBDirectory);
 
     function fundingCycleStore() external view returns (IJBFundingCycleStore);

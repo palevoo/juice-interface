@@ -12,6 +12,6 @@ struct DidPayParam {
     bytes delegateMetadata;
 }
 
-interface IPayDelegate {
+interface IJBPayDelegate {
     function didPay(DidPayParam calldata _param) external;
 }

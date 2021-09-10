@@ -13,6 +13,6 @@ struct DidRedeemParam {
     bytes metadata;
 }
 
-interface IRedemptionDelegate {
+interface IJBRedemptionDelegate {
     function didRedeem(DidRedeemParam calldata _param) external;
 }
