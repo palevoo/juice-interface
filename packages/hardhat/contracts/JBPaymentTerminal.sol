@@ -11,7 +11,7 @@ import "./libraries/SplitsGroups.sol";
 // Inheritance
 import "./interfaces/IJBPaymentTerminal.sol";
 import "./interfaces/IJBTerminal.sol";
-import "./abstract/Operatable.sol";
+import "./abstract/JBOperatable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
@@ -25,13 +25,13 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
   Inherits from:
 
   IJBPaymentTerminal - general interface for the methods in this contract that send and receive funds according to the Juicebox protocol's rules.
-  Operatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
+  JBOperatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
   ReentrencyGuard - several function in this contract shouldn't be accessible recursively.
 */
 contract JBPaymentTerminal is
     IJBPaymentTerminal,
     IJBTerminal,
-    Operatable,
+    JBOperatable,
     Ownable,
     ReentrancyGuard
 {
@@ -67,6 +67,20 @@ contract JBPaymentTerminal is
     mapping(IJBTerminal => bool) public override migrationIsAllowed;
 
     //*********************************************************************//
+    // ------------------------- external views -------------------------- //
+    //*********************************************************************//
+
+    /** 
+      @notice 
+      The address that can manipulate a project's funding cycles and tokens when the project is using this payment terminal.
+
+      @return The address.
+    */
+    function dataAuthority() external view override returns (address) {
+        return address(data);
+    }
+
+    //*********************************************************************//
     // -------------------------- constructor ---------------------------- //
     //*********************************************************************//
 
@@ -78,12 +92,12 @@ contract JBPaymentTerminal is
       @param _data The contract that stiches together funding cycles and treasury tokens.
     */
     constructor(
-        IOperatorStore _operatorStore,
+        IJBOperatorStore _operatorStore,
         IJBProjects _projects,
         IJBSplitsStore _splitsStore,
         IJBDirectory _directory,
         IJBPaymentTerminalData _data
-    ) Operatable(_operatorStore) {
+    ) JBOperatable(_operatorStore) {
         projects = _projects;
         splitsStore = _splitsStore;
         directory = _directory;
@@ -262,7 +276,7 @@ contract JBPaymentTerminal is
             Address.sendValue(_beneficiary, _leftoverTransferAmount);
 
         emit UseAllowance(
-            _fundingCycle.number,
+            _fundingCycle.id,
             _fundingCycle.configured,
             _projectId,
             _beneficiary,
@@ -312,7 +326,7 @@ contract JBPaymentTerminal is
         returns (uint256 claimAmount)
     {
         // Can't send claimed funds to the zero address.
-        require(_beneficiary != address(0), "TV2PL: ZERO_ADDRESS");
+        require(_beneficiary != address(0), "JBPaymentTerminal: ZERO_ADDRESS");
         {
             // Keep a reference to the funding cycles during which the redemption is being made.
             FundingCycle memory _fundingCycle;
@@ -332,7 +346,7 @@ contract JBPaymentTerminal is
             if (claimAmount > 0) Address.sendValue(_beneficiary, claimAmount);
 
             emit Redeem(
-                _fundingCycle.number,
+                _fundingCycle.id,
                 _projectId,
                 _holder,
                 _fundingCycle,
@@ -368,17 +382,20 @@ contract JBPaymentTerminal is
         // The data layer must be the project's current terminal.
         require(
             address(directory.terminalOf(_projectId)) == address(data),
-            "TV2PL: UNAUTHORIZED"
+            "JBPaymentTerminal: UNAUTHORIZED"
         );
 
         // The migration destination must be allowed.
-        require(migrationIsAllowed[_to], "TV2DL: NOT_ALLOWED");
+        require(migrationIsAllowed[_to], "JBPaymentTerminal: NOT_ALLOWED");
 
         // Allow the terminal receiving the project's funds and operations to prepare for the migration.
         _to.prepForMigrationOf(_projectId);
 
         // Record the migration in the data layer.
-        uint256 _balance = data.recordMigration(_projectId, _to);
+        uint256 _balance = data.recordMigration(_projectId);
+
+        // Switch the terminal that the terminal directory will point to for this project.
+        directory.setTerminal(_projectId, _to);
 
         // Move the funds to the new contract if needed.
         if (_balance > 0)
@@ -402,9 +419,11 @@ contract JBPaymentTerminal is
         payable
         override
     {
-        if (msg.value > 0)
-            // Record the added funds in the data later.
-            data.recordAddedBalance(msg.value, _projectId);
+        // Amount must be greater than 0.
+        require(msg.value > 0, "JBPaymentTerminal: NO_OP");
+
+        // Record the added funds in the data later.
+        data.recordAddedBalance(msg.value, _projectId);
 
         emit AddToBalance(_projectId, msg.value, _memo, msg.sender);
     }
@@ -443,7 +462,10 @@ contract JBPaymentTerminal is
         nonReentrant
     {
         // This function can only be called if this contract isn't already the project's current terminal.
-        require(directory.terminalOf(_projectId) != this, "TV2DL: NOT_ALLOWED");
+        require(
+            directory.terminalOf(_projectId) != this,
+            "JBPaymentTerminal: NOT_ALLOWED"
+        );
         data.recordPrepForMigrationOf(_projectId);
     }
 
@@ -495,7 +517,7 @@ contract JBPaymentTerminal is
             if (_payoutAmount > 0) {
                 // Transfer ETH to the mod.
                 // If there's an allocator set, transfer to its `allocate` function.
-                if (_split.allocator != ISplitAllocator(address(0))) {
+                if (_split.allocator != IJBSplitAllocator(address(0))) {
                     _split.allocator.allocate{value: _payoutAmount}(
                         _payoutAmount,
                         SplitsGroups.Payouts,
@@ -515,7 +537,7 @@ contract JBPaymentTerminal is
                     // The project must have a terminal to send funds to.
                     require(
                         _terminal != IJBTerminal(address(0)),
-                        "TV2PL: BAD_SPLIT"
+                        "JBPaymentTerminal: BAD_SPLIT"
                     );
 
                     // Save gas if this contract is being used as the terminal.
@@ -549,7 +571,6 @@ contract JBPaymentTerminal is
             }
 
             emit DistributeToPayoutSplit(
-                _fundingCycle.number,
                 _fundingCycle.id,
                 _fundingCycle.projectId,
                 _split,
@@ -612,10 +633,10 @@ contract JBPaymentTerminal is
         bytes memory _delegateMetadata
     ) private returns (uint256) {
         // Positive payments only.
-        require(_amount > 0, "TV2PL: BAD_AMOUNT");
+        require(_amount > 0, "JBPaymentTerminal: BAD_AMOUNT");
 
         // Cant send tokens to the zero address.
-        require(_beneficiary != address(0), "TV2PL: ZERO_ADDRESS");
+        require(_beneficiary != address(0), "JBPaymentTerminal: ZERO_ADDRESS");
 
         FundingCycle memory _fundingCycle;
         uint256 _weight;
@@ -633,7 +654,7 @@ contract JBPaymentTerminal is
         );
 
         emit Pay(
-            _fundingCycle.number,
+            _fundingCycle.id,
             _projectId,
             _beneficiary,
             _fundingCycle,
@@ -644,6 +665,6 @@ contract JBPaymentTerminal is
             msg.sender
         );
 
-        return _fundingCycle.number;
+        return _fundingCycle.id;
     }
 }

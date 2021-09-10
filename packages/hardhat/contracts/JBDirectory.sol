@@ -5,7 +5,7 @@ import "./interfaces/IJBTerminal.sol";
 import "./interfaces/IJBDirectory.sol";
 import "./interfaces/IProjects.sol";
 
-import "./abstract/Operatable.sol";
+import "./abstract/JBOperatable.sol";
 
 import "./libraries/Operations.sol";
 
@@ -15,9 +15,7 @@ import "./DirectPaymentAddress.sol";
   @notice
   Allows project owners to deploy proxy contracts that can pay them when receiving funds directly.
 */
-contract JBDirectory is IJBDirectory, Operatable {
-    // --- private stored properties --- //
-
+contract JBDirectory is IJBDirectory, JBOperatable {
     // --- public immutable stored properties --- //
 
     /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
@@ -34,8 +32,8 @@ contract JBDirectory is IJBDirectory, Operatable {
       @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
       @param _operatorStore A contract storing operator assignments.
     */
-    constructor(IJBProjects _projects, IOperatorStore _operatorStore)
-        Operatable(_operatorStore)
+    constructor(IJBProjects _projects, IJBOperatorStore _operatorStore)
+        JBOperatable(_operatorStore)
     {
         projects = _projects;
     }

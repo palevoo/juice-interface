@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-interface ISplitAllocator {
+interface IJBSplitAllocator {
     event Allocate(
         uint256 indexed projectId,
         uint256 indexed forProjectId,

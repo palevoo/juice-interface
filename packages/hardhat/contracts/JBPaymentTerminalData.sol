@@ -11,7 +11,7 @@ import "./libraries/FundingCycleMetadataResolver.sol";
 
 // Inheritance
 import "./interfaces/IJBPaymentTerminalData.sol";
-import "./abstract/Operatable.sol";
+import "./abstract/JBOperatable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
@@ -29,13 +29,13 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
   Inherits from:
 
   IJBPaymentTerminalData - general interface for the methods in this contract that change the blockchain's state according to the Juicebox protocol's rules.
-  Operatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
+  JBOperatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
   Ownable - the owner of this contract can specify its payment layer contract, and add new ITerminals to an allow list that projects currently using this terminal can migrate to.
   ReentrencyGuard - several function in this contract shouldn't be accessible recursively.
 */
 contract JBPaymentTerminalData is
     IJBPaymentTerminalData,
-    Operatable,
+    JBOperatable,
     Ownable,
     ReentrancyGuard
 {
@@ -44,7 +44,10 @@ contract JBPaymentTerminalData is
 
     // Modifier to only allow the payment layer to call the function.
     modifier onlyPaymentTerminal() {
-        require(msg.sender == address(paymentTerminal), "TV2DL: UNAUTHORIZED");
+        require(
+            msg.sender == address(paymentTerminal),
+            "JBPaymentTerminalData: UNAUTHORIZED"
+        );
         _;
     }
 
@@ -234,14 +237,14 @@ contract JBPaymentTerminalData is
       @param _directory The directory of terminals.
     */
     constructor(
-        IOperatorStore _operatorStore,
+        IJBOperatorStore _operatorStore,
         IJBProjects _projects,
         IJBFundingCycleStore _fundingCycleStore,
         IJBTokenStore _tokenStore,
         IJBSplitsStore _splitsStore,
         IJBPrices _prices,
         IJBDirectory _directory
-    ) Operatable(_operatorStore) {
+    ) JBOperatable(_operatorStore) {
         projects = _projects;
         fundingCycleStore = _fundingCycleStore;
         tokenStore = _tokenStore;
@@ -457,10 +460,13 @@ contract JBPaymentTerminalData is
         returns (uint256 tokenCount)
     {
         // Can't send to the zero address.
-        require(_beneficiary != address(0), "TV2DL: ZERO_ADDRESS");
+        require(
+            _beneficiary != address(0),
+            "JBPaymentTerminalData: ZERO_ADDRESS"
+        );
 
         // There should be tokens to mint.
-        require(_amount > 0, "TV2DL: NO_OP");
+        require(_amount > 0, "JBPaymentTerminalData: NO_OP");
 
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
@@ -468,7 +474,7 @@ contract JBPaymentTerminalData is
         );
 
         // The current funding cycle must not be paused.
-        require(_fundingCycle.mintPaused(), "TV2DL: PAUSED");
+        require(_fundingCycle.mintPaused(), "JBPaymentTerminalData: PAUSED");
 
         // If a weight isn't specified, get the current funding cycle to read the weight from. If there's no current funding cycle, use the base weight.
         _weight = _weight > 0 ? _weight : _fundingCycle.number > 0
@@ -537,7 +543,7 @@ contract JBPaymentTerminalData is
         )
     {
         // There should be tokens to burn
-        require(_tokenCount > 0, "TV2DL: NO_OP");
+        require(_tokenCount > 0, "JBPaymentTerminalData: NO_OP");
 
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
@@ -545,7 +551,7 @@ contract JBPaymentTerminalData is
         );
 
         // The current funding cycle must not be paused.
-        require(_fundingCycle.burnPaused(), "TV2DL: PAUSED");
+        require(_fundingCycle.burnPaused(), "JBPaymentTerminalData: PAUSED");
 
         // Update the token tracker so that reserved tokens will still be correctly mintable.
         _subtractFromTokenTracker(_projectId, _tokenCount);
@@ -576,29 +582,6 @@ contract JBPaymentTerminalData is
         returns (uint256)
     {
         return _distributeReservedTokens(_projectId, _memo);
-    }
-
-    /**
-      @notice
-      Sets up any peice of internal state necessary for the specified project to migrate to this terminal.
-
-      @dev
-      This must be called before this contract is the current terminal for the project.
-
-      @dev
-      This function can be called many times, but must be called in the same transaction that migrates a project to this terminal.
-
-      @param _projectId The ID of the project that is being migrated to this terminal.
-    */
-    function recordPrepForMigrationOf(uint256 _projectId)
-        external
-        override
-        onlyPaymentTerminal
-    {
-        // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
-        _processedTokenTrackerOf[_projectId] = int256(
-            tokenStore.totalSupplyOf(_projectId)
-        );
     }
 
     //*********************************************************************//
@@ -658,10 +641,10 @@ contract JBPaymentTerminalData is
         fundingCycle = fundingCycleStore.currentOf(_projectId);
 
         // The project must have a funding cycle configured.
-        require(fundingCycle.number > 0, "TV2DL: NOT_FOUND");
+        require(fundingCycle.number > 0, "JBPaymentTerminalData: NOT_FOUND");
 
         // Must not be paused.
-        require(!fundingCycle.payPaused(), "TV2DL: PAUSED");
+        require(!fundingCycle.payPaused(), "JBPaymentTerminalData: PAUSED");
 
         // Save a reference to the delegate to use.
         IPayDelegate _delegate;
@@ -703,7 +686,10 @@ contract JBPaymentTerminalData is
             );
 
             // The token count must be greater than or equal to the minimum expected.
-            require(tokenCount >= _minReturnedTokens, "TV2DL: INADEQUATE");
+            require(
+                tokenCount >= _minReturnedTokens,
+                "JBPaymentTerminalData: INADEQUATE"
+            );
 
             // Add the amount to the balance of the project.
             balanceOf[_projectId] = balanceOf[_projectId] + _amount;
@@ -778,15 +764,15 @@ contract JBPaymentTerminalData is
         fundingCycle = fundingCycleStore.tap(_projectId, _amount);
 
         // Funds cannot be withdrawn if there's no funding cycle.
-        require(fundingCycle.id > 0, "TV2DL: NOT_FOUND");
+        require(fundingCycle.id > 0, "JBPaymentTerminalData: NOT_FOUND");
 
         // The funding cycle must not be paused.
-        require(!fundingCycle.tapPaused(), "TV2DL: PAUSED");
+        require(!fundingCycle.tapPaused(), "JBPaymentTerminalData: PAUSED");
 
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "TV2DL: UNEXPECTED_CURRENCY"
+            "JBPaymentTerminalData: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -796,12 +782,15 @@ contract JBPaymentTerminalData is
         );
 
         // The amount being withdrawn must be at least as much as was expected.
-        require(_minReturnedWei <= withdrawnAmount, "TV2DL: INADEQUATE");
+        require(
+            _minReturnedWei <= withdrawnAmount,
+            "JBPaymentTerminalData: INADEQUATE"
+        );
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "TV2DL: INSUFFICIENT_FUNDS"
+            "JBPaymentTerminalData: INSUFFICIENT_FUNDS"
         );
 
         // Removed the withdrawn funds from the project's balance.
@@ -838,7 +827,7 @@ contract JBPaymentTerminalData is
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "TV2DL: UNEXPECTED_CURRENCY"
+            "JBPaymentTerminalData: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -853,16 +842,19 @@ contract JBPaymentTerminalData is
                 remainingOverflowAllowanceOf[_projectId][
                     fundingCycle.configured
                 ],
-            "TV2DL: NOT_ALLOWED"
+            "JBPaymentTerminalData: NOT_ALLOWED"
         );
 
         // The amount being withdrawn must be at least as much as was expected.
-        require(_minReturnedWei <= withdrawnAmount, "TV2DL: INADEQUATE");
+        require(
+            _minReturnedWei <= withdrawnAmount,
+            "JBPaymentTerminalData: INADEQUATE"
+        );
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "TV2DL: INSUFFICIENT_FUNDS"
+            "JBPaymentTerminalData: INSUFFICIENT_FUNDS"
         );
 
         // Store the decremented value.
@@ -914,14 +906,14 @@ contract JBPaymentTerminalData is
         // The holder must have the specified number of the project's tokens.
         require(
             tokenStore.balanceOf(_holder, _projectId) >= _tokenCount,
-            "TV2DL: INSUFFICIENT_TOKENS"
+            "JBPaymentTerminalData: INSUFFICIENT_TOKENS"
         );
 
         // Get a reference to the project's current funding cycle.
         fundingCycle = fundingCycleStore.currentOf(_projectId);
 
         // The current funding cycle must not be paused.
-        require(!fundingCycle.redeemPaused(), "TV2DL: PAUSED");
+        require(!fundingCycle.redeemPaused(), "JBPaymentTerminalData: PAUSED");
 
         // Save a reference to the delegate to use.
         IRedemptionDelegate _delegate;
@@ -948,12 +940,15 @@ contract JBPaymentTerminalData is
         }
 
         // The amount being claimed must be at least as much as was expected.
-        require(claimAmount >= _minReturnedWei, "TV2DL: INADEQUATE");
+        require(
+            claimAmount >= _minReturnedWei,
+            "JBPaymentTerminalData: INADEQUATE"
+        );
 
         // The amount being claimed must be within the project's balance.
         require(
             claimAmount <= balanceOf[_projectId],
-            "TV2DL: INSUFFICIENT_FUNDS"
+            "JBPaymentTerminalData: INSUFFICIENT_FUNDS"
         );
 
         // Redeem the tokens, which burns them.
@@ -984,15 +979,37 @@ contract JBPaymentTerminalData is
 
     /**
       @notice
+      Sets up any peice of internal state necessary for the specified project to migrate to this terminal.
+
+      @dev
+      This must be called before this contract is the current terminal for the project.
+
+      @dev
+      This function can be called many times, but must be called in the same transaction that migrates a project to this terminal.
+
+      @param _projectId The ID of the project that is being migrated to this terminal.
+    */
+    function recordPrepForMigrationOf(uint256 _projectId)
+        external
+        override
+        onlyPaymentTerminal
+    {
+        // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
+        _processedTokenTrackerOf[_projectId] = int256(
+            tokenStore.totalSupplyOf(_projectId)
+        );
+    }
+
+    /**
+      @notice
       Allows a project owner to migrate its funds and treasury operations to a new contract.
 
       @dev
       Only the payment layer can record migrations.
 
       @param _projectId The ID of the project being migrated.
-      @param _to The contract that will gain the project's funds.
     */
-    function recordMigration(uint256 _projectId, IJBTerminal _to)
+    function recordMigration(uint256 _projectId)
         external
         override
         onlyPaymentTerminal
@@ -1009,9 +1026,6 @@ contract JBPaymentTerminalData is
 
         // Set the balance to 0.
         balanceOf[_projectId] = 0;
-
-        // Switch the terminal that the terminal directory will point to for this project.
-        directory.setTerminal(_projectId, _to);
     }
 
     /**
@@ -1073,15 +1087,21 @@ contract JBPaymentTerminalData is
         FundingCycleMetadataV2 memory _metadata
     ) private pure returns (uint256 packed) {
         // The reserved project token rate must be less than or equal to 200.
-        require(_metadata.reservedRate <= 200, "TV2DL: BAD_RESERVED_RATE");
+        require(
+            _metadata.reservedRate <= 200,
+            "JBPaymentTerminalData: BAD_RESERVED_RATE"
+        );
 
         // The redemption rate must be between 0 and 200.
-        require(_metadata.redemptionRate <= 200, "TV2DL: BAD_REDEMPTION_RATE");
+        require(
+            _metadata.redemptionRate <= 200,
+            "JBPaymentTerminalData: BAD_REDEMPTION_RATE"
+        );
 
         // The ballot redemption rate must be less than or equal to 200.
         require(
             _metadata.ballotRedemptionRate <= 200,
-            "TV2DL: BAD_BALLOT_REDEMPTION_RATE"
+            "JBPaymentTerminalData: BAD_BALLOT_REDEMPTION_RATE"
         );
 
         // version 1 in the first 8 bytes.
@@ -1152,7 +1172,7 @@ contract JBPaymentTerminalData is
             tokenStore.mint(_owner, _projectId, _leftoverTokenCount, false);
 
         emit DistributeReservedTokens(
-            _fundingCycle.number,
+            _fundingCycle.id,
             _projectId,
             _owner,
             count,
@@ -1312,7 +1332,7 @@ contract JBPaymentTerminalData is
                 );
 
             // If there's an allocator set, trigger its `allocate` function.
-            if (_split.allocator != ISplitAllocator(address(0)))
+            if (_split.allocator != IJBSplitAllocator(address(0)))
                 _split.allocator.allocate(
                     _tokenCount,
                     SplitsGroups.ReservedTokens,
@@ -1326,7 +1346,6 @@ contract JBPaymentTerminalData is
             leftoverAmount = leftoverAmount - _tokenCount;
 
             emit DistributeToReservedTokenSplit(
-                _fundingCycle.number,
                 _fundingCycle.id,
                 _fundingCycle.projectId,
                 _split,

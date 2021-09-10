@@ -4,11 +4,11 @@ pragma solidity 0.8.6;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
 
-import "./interfaces/IToken.sol";
+import "./interfaces/IJBToken.sol";
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Token is ERC20, ERC20Permit, Ownable, IToken {
+contract JBToken is IJBToken, ERC20, ERC20Permit, Ownable {
     constructor(string memory _name, string memory _symbol)
         ERC20(_name, _symbol)
         ERC20Permit(_name)

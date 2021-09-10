@@ -2,12 +2,12 @@
 pragma solidity 0.8.6;
 
 import "./interfaces/IJBTokenStore.sol";
-import "./abstract/Operatable.sol";
+import "./abstract/JBOperatable.sol";
 import "./abstract/JBTerminalUtility.sol";
 
 import "./libraries/Operations.sol";
 
-import "./Token.sol";
+import "./JBToken.sol";
 
 /** 
   @notice 
@@ -20,16 +20,16 @@ import "./Token.sol";
   @dev
   The total supply of a project's tokens and the balance of each account are calculated in this contract.
 */
-contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
+contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
     // --- public immutable stored properties --- //
 
     /// @notice The Projects contract which mints ERC-721's that represent project ownership and transfers.
-    IProjects public immutable override projects;
+    IJBProjects public immutable override projects;
 
     // --- public stored properties --- //
 
     // Each project's ERC20 Token tokens.
-    mapping(uint256 => IToken) public override tokenOf;
+    mapping(uint256 => IJBToken) public override tokenOf;
 
     // Each holder's balance of staked Tokens for each project.
     mapping(address => mapping(uint256 => uint256))
@@ -66,8 +66,8 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
         returns (uint256 supply)
     {
         supply = stakedTotalSupplyOf[_projectId];
-        IToken _token = tokenOf[_projectId];
-        if (_token != IToken(address(0)))
+        IJBToken _token = tokenOf[_projectId];
+        if (_token != IJBToken(address(0)))
             supply = supply + _token.totalSupply();
     }
 
@@ -87,8 +87,8 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
         returns (uint256 balance)
     {
         balance = stakedBalanceOf[_holder][_projectId];
-        IToken _token = tokenOf[_projectId];
-        if (_token != IToken(address(0)))
+        IJBToken _token = tokenOf[_projectId];
+        if (_token != IJBToken(address(0)))
             balance = balance + _token.balanceOf(_holder);
     }
 
@@ -100,10 +100,10 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
       @param _directory A directory of a project's current Juicebox terminal to receive payments in.
     */
     constructor(
-        IProjects _projects,
-        IOperatorStore _operatorStore,
+        IJBProjects _projects,
+        IJBOperatorStore _operatorStore,
         IJBDirectory _directory
-    ) Operatable(_operatorStore) JBTerminalUtility(_directory) {
+    ) JBOperatable(_operatorStore) JBTerminalUtility(_directory) {
         projects = _projects;
     }
 
@@ -130,6 +130,7 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
             _projectId,
             Operations.Issue
         )
+        returns (IJBToken token)
     {
         // There must be a name.
         require((bytes(_name).length > 0), "JBTokenStore::issue: EMPTY_NAME");
@@ -142,15 +143,17 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
 
         // Only one ERC20 token can be issued.
         require(
-            tokenOf[_projectId] == IToken(address(0)),
+            tokenOf[_projectId] == IJBToken(address(0)),
             "JBTokenStore::issue: ALREADY_ISSUED"
         );
 
-        // Create the contract in this TerminalV1 contract in order to have mint and burn privileges.
-        // Prepend the strings with standards.
-        tokenOf[_projectId] = new Token(_name, _symbol);
+        // Deploy the token contract.
+        token = new JBToken(_name, _symbol);
 
-        emit Issue(_projectId, _name, _symbol, msg.sender);
+        // Store the token contract.
+        tokenOf[_projectId] = token;
+
+        emit Issue(_projectId, token, _name, _symbol, msg.sender);
     }
 
     /** 
@@ -175,11 +178,11 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
         require(_amount > 0, "JBTokenStore::mint: NO_OP");
 
         // Get a reference to the project's ERC20 tokens.
-        IToken _token = tokenOf[_projectId];
+        IJBToken _token = tokenOf[_projectId];
 
         // If there exists ERC-20 tokens and the caller prefers these unstaked tokens.
         bool _shouldUnstakeTokens = _preferUnstakedTokens &&
-            _token != IToken(address(0));
+            _token != IJBToken(address(0));
 
         if (_shouldUnstakeTokens) {
             // Mint the equivalent amount of ERC20s.
@@ -223,14 +226,14 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
         bool _preferUnstakedTokens
     ) external override onlyTerminal(_projectId) {
         // Get a reference to the project's ERC20 tokens.
-        IToken _token = tokenOf[_projectId];
+        IJBToken _token = tokenOf[_projectId];
 
         // Get a reference to the staked amount.
         uint256 _unlockedStakedBalance = stakedBalanceOf[_holder][_projectId] -
             lockedBalanceOf[_holder][_projectId];
 
         // Get a reference to the number of tokens there are.
-        uint256 _unstakedBalanceOf = _token == IToken(address(0))
+        uint256 _unstakedBalanceOf = _token == IJBToken(address(0))
             ? 0
             : _token.balanceOf(_holder);
 
@@ -315,10 +318,13 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
         )
     {
         // Get a reference to the project's ERC20 tokens.
-        IToken _token = tokenOf[_projectId];
+        IJBToken _token = tokenOf[_projectId];
 
         // Tokens must have been issued.
-        require(_token != IToken(address(0)), "JBTokenStore::stake: NOT_FOUND");
+        require(
+            _token != IJBToken(address(0)),
+            "JBTokenStore::stake: NOT_FOUND"
+        );
 
         // Get a reference to the holder's current balance.
         uint256 _unstakedBalanceOf = _token.balanceOf(_holder);
@@ -370,11 +376,11 @@ contract JBTokenStore is JBTerminalUtility, Operatable, IJBTokenStore {
         )
     {
         // Get a reference to the project's ERC20 tokens.
-        IToken _token = tokenOf[_projectId];
+        IJBToken _token = tokenOf[_projectId];
 
         // Tokens must have been issued.
         require(
-            _token != IToken(address(0)),
+            _token != IJBToken(address(0)),
             "JBTokenStore::unstake: NOT_FOUND"
         );
 

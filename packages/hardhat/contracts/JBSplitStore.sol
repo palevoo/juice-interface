@@ -5,14 +5,14 @@ import "./libraries/Operations2.sol";
 
 // Inheritance
 import "./interfaces/IJBSplitsStore.sol";
-import "./abstract/Operatable.sol";
+import "./abstract/JBOperatable.sol";
 import "./abstract/JBTerminalUtility.sol";
 
 /**
   @notice
   Stores splits for each project.
 */
-contract JBSplitsStore is IJBSplitsStore, Operatable, JBTerminalUtility {
+contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
     // --- private stored properties --- //
 
     // All splits for each project ID's configurations.
@@ -22,7 +22,7 @@ contract JBSplitsStore is IJBSplitsStore, Operatable, JBTerminalUtility {
     // --- public immutable stored properties --- //
 
     /// @notice The contract storing project information.
-    IProjects public immutable override projects;
+    IJBProjects public immutable override projects;
 
     // --- public views --- //
 
@@ -52,10 +52,10 @@ contract JBSplitsStore is IJBSplitsStore, Operatable, JBTerminalUtility {
       @param _projects A Projects contract which mints ERC-721's that represent project ownership and transfers.
     */
     constructor(
-        IOperatorStore _operatorStore,
+        IJBOperatorStore _operatorStore,
         IJBDirectory _jbDirectory,
-        IProjects _projects
-    ) Operatable(_operatorStore) JBTerminalUtility(_jbDirectory) {
+        IJBProjects _projects
+    ) JBOperatable(_operatorStore) JBTerminalUtility(_jbDirectory) {
         projects = _projects;
     }
 
@@ -88,7 +88,7 @@ contract JBSplitsStore is IJBSplitsStore, Operatable, JBTerminalUtility {
             projects.ownerOf(_projectId),
             _projectId,
             Operations2.SetSplits,
-            address(directory.terminalOf(_projectId))
+            address(directory.terminalOf(_projectId).dataAuthority())
         )
     {
         // There must be something to do.
@@ -135,7 +135,7 @@ contract JBSplitsStore is IJBSplitsStore, Operatable, JBTerminalUtility {
 
             // The allocator and the beneficiary shouldn't both be the zero address.
             require(
-                _splits[_i].allocator != ISplitAllocator(address(0)) ||
+                _splits[_i].allocator != IJBSplitAllocator(address(0)) ||
                     _splits[_i].beneficiary != address(0),
                 "JBSplitsStore::set: ZERO_ADDRESS"
             );

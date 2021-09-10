@@ -34,7 +34,7 @@ interface IJBPaymentTerminal {
     );
 
     event UseAllowance(
-        uint256 indexed fundingCycleNumber,
+        uint256 indexed fundingCycleId,
         uint256 indexed configuration,
         uint256 indexed projectId,
         address beneficiary,
@@ -45,7 +45,7 @@ interface IJBPaymentTerminal {
     );
 
     event Pay(
-        uint256 indexed fundingCycleNumber,
+        uint256 indexed fundingCycleId,
         uint256 indexed projectId,
         address indexed beneficiary,
         FundingCycle fundingCycle,
@@ -56,7 +56,7 @@ interface IJBPaymentTerminal {
         address caller
     );
     event Redeem(
-        uint256 indexed fundingCycleNumber,
+        uint256 indexed fundingCycleId,
         uint256 indexed projectId,
         address indexed holder,
         FundingCycle fundingCycle,
@@ -67,7 +67,6 @@ interface IJBPaymentTerminal {
         address caller
     );
     event DistributeToPayoutSplit(
-        uint256 indexed fundingCycleNumber,
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
         Split split,

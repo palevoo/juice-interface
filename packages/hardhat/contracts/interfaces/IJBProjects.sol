@@ -12,7 +12,7 @@ interface IJBProjects is IERC721 {
         address indexed owner,
         bytes32 indexed handle,
         string uri,
-        IJBTerminal jbTerminal,
+        IJBTerminal terminal,
         address caller
     );
 

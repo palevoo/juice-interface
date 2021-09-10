@@ -35,7 +35,7 @@ interface IJBPaymentTerminalData {
         address caller
     );
     event DistributeReservedTokens(
-        uint256 indexed fundingCycleNumber,
+        uint256 indexed fundingCycleId,
         uint256 indexed projectId,
         address indexed beneficiary,
         uint256 count,
@@ -45,7 +45,6 @@ interface IJBPaymentTerminalData {
     );
 
     event DistributeToReservedTokenSplit(
-        uint256 indexed fundingCycleNumber,
         uint256 indexed fundingCycleId,
         uint256 indexed projectId,
         Split split,
@@ -72,7 +71,7 @@ interface IJBPaymentTerminalData {
         address caller
     );
 
-    event SetPaymentTerminal(IJBTerminal paymentTerminal, address caller);
+    event SetPaymentTerminal(IJBTerminal terminal, address caller);
 
     function directory() external view returns (IJBDirectory);
 
@@ -207,7 +206,7 @@ interface IJBPaymentTerminalData {
         external
         returns (uint256 amount);
 
-    function recordMigration(uint256 _projectId, IJBTerminal _to)
+    function recordMigration(uint256 _projectId)
         external
         returns (uint256 balance);
 

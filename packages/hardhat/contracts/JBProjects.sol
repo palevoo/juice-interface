@@ -3,7 +3,7 @@ pragma solidity 0.8.6;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
-import "./abstract/Operatable.sol";
+import "./abstract/JBOperatable.sol";
 import "./interfaces/IJBProjects.sol";
 
 import "./libraries/Operations.sol";
@@ -15,7 +15,7 @@ import "./libraries/Operations.sol";
   @dev
   Projects are represented as ERC-721's.
 */
-contract JBProjects is ERC721, IJBProjects, Operatable {
+contract JBProjects is ERC721, IJBProjects, JBOperatable {
     // --- private stored properties --- //
 
     // The number of seconds in a day.
@@ -60,9 +60,9 @@ contract JBProjects is ERC721, IJBProjects, Operatable {
     /** 
       @param _operatorStore A contract storing operator assignments.
     */
-    constructor(IOperatorStore _operatorStore)
+    constructor(IJBOperatorStore _operatorStore)
         ERC721("Juicebox project", "JUICEBOX PROJECT")
-        Operatable(_operatorStore)
+        JBOperatable(_operatorStore)
     {}
 
     /**
@@ -86,13 +86,13 @@ contract JBProjects is ERC721, IJBProjects, Operatable {
         IJBTerminal _terminal
     ) external override returns (uint256) {
         // Handle must exist.
-        require(_handle != bytes32(0), "Projects::create: EMPTY_HANDLE");
+        require(_handle != bytes32(0), "JBProjects::create: EMPTY_HANDLE");
 
         // Handle must be unique.
         require(
             projectFor[_handle] == 0 &&
                 transferAddressFor[_handle] == address(0),
-            "Projects::create: HANDLE_TAKEN"
+            "JBProjects::create: HANDLE_TAKEN"
         );
 
         // Increment the count, which will be used as the ID.
@@ -133,13 +133,13 @@ contract JBProjects is ERC721, IJBProjects, Operatable {
         requirePermission(ownerOf(_projectId), _projectId, Operations.SetHandle)
     {
         // Handle must exist.
-        require(_handle != bytes32(0), "Projects::setHandle: EMPTY_HANDLE");
+        require(_handle != bytes32(0), "JBProjects::setHandle: EMPTY_HANDLE");
 
         // Handle must be unique.
         require(
             projectFor[_handle] == 0 &&
                 transferAddressFor[_handle] == address(0),
-            "Projects::setHandle: HANDLE_TAKEN"
+            "JBProjects::setHandle: HANDLE_TAKEN"
         );
 
         // Register the change in the resolver.
@@ -195,13 +195,13 @@ contract JBProjects is ERC721, IJBProjects, Operatable {
     {
         require(
             _newHandle != bytes32(0),
-            "Projects::transferHandle: EMPTY_HANDLE"
+            "JBProjects::transferHandle: EMPTY_HANDLE"
         );
 
         require(
             projectFor[_newHandle] == 0 &&
                 transferAddressFor[_handle] == address(0),
-            "Projects::transferHandle: HANDLE_TAKEN"
+            "JBProjects::transferHandle: HANDLE_TAKEN"
         );
 
         // Get a reference to the project's currency handle.
@@ -255,7 +255,7 @@ contract JBProjects is ERC721, IJBProjects, Operatable {
             transferAddressFor[_handle] == _for ||
                 (challengeExpiryOf[_handle] > 0 &&
                     block.timestamp > challengeExpiryOf[_handle]),
-            "Projects::claimHandle: UNAUTHORIZED"
+            "JBProjects::claimHandle: UNAUTHORIZED"
         );
 
         // Register the change in the resolver.
@@ -287,13 +287,13 @@ contract JBProjects is ERC721, IJBProjects, Operatable {
         // No need to challenge a handle that's not taken.
         require(
             projectFor[_handle] > 0,
-            "Projects::challenge: HANDLE_NOT_TAKEN"
+            "JBProjects::challenge: HANDLE_NOT_TAKEN"
         );
 
         // No need to challenge again if a handle is already being challenged.
         require(
             challengeExpiryOf[_handle] == 0,
-            "Projects::challenge: HANDLE_ALREADY_BEING_CHALLENGED"
+            "JBProjects::challenge: HANDLE_ALREADY_BEING_CHALLENGED"
         );
 
         // The challenge will expire in a year, at which point the handle can be claimed if the challenge hasn't been answered.

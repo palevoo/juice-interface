@@ -26,5 +26,5 @@ interface IJBTerminal {
         external
         payable;
 
-    // function allowMigration(ITerminal _contract) external;
+    function dataAuthority() external view returns (address);
 }

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./IOperatorStore.sol";
-import "./IProjects.sol";
-import "./ISplitAllocator.sol";
+import "./IJBOperatorStore.sol";
+import "./IJBProjects.sol";
+import "./IJBSplitAllocator.sol";
 
 struct Split {
     bool preferUnstaked;
     uint16 percent;
     uint48 lockedUntil;
     address payable beneficiary;
-    ISplitAllocator allocator;
+    IJBSplitAllocator allocator;
     uint56 projectId;
 }
 
@@ -23,7 +23,7 @@ interface IJBSplitsStore {
         address caller
     );
 
-    function projects() external view returns (IProjects);
+    function projects() external view returns (IJBProjects);
 
     function get(
         uint256 _projectId,

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./IProjects.sol";
+import "./IJBProjects.sol";
 import "./IOperatorStore.sol";
-import "./IToken.sol";
+import "./IJBToken.sol";
 
 interface IJBTokenStore {
     event Issue(
         uint256 indexed projectId,
+        IJBToken indexed token,
         string name,
         string symbol,
         address caller
@@ -66,9 +67,9 @@ interface IJBTokenStore {
         address caller
     );
 
-    function tokenOf(uint256 _projectId) external view returns (IToken);
+    function tokenOf(uint256 _projectId) external view returns (IJBToken);
 
-    function projects() external view returns (IProjects);
+    function projects() external view returns (IJBProjects);
 
     function lockedBalanceOf(address _holder, uint256 _projectId)
         external
@@ -102,7 +103,7 @@ interface IJBTokenStore {
         uint256 _projectId,
         string calldata _name,
         string calldata _symbol
-    ) external;
+    ) external returns (IJBToken token);
 
     function burn(
         address _holder,
