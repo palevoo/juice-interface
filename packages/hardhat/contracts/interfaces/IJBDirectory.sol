@@ -15,5 +15,5 @@ interface IJBDirectory {
 
     function terminalOf(uint256 _projectId) external view returns (IJBTerminal);
 
-    function setTerminal(uint256 _projectId, IJBTerminal _terminal) external;
+    function setTerminalOf(uint256 _projectId, IJBTerminal _terminal) external;
 }

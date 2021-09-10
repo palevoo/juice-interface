@@ -99,54 +99,54 @@ interface IJBTokenStore {
         view
         returns (uint256 _result);
 
-    function issue(
+    function issueFor(
         uint256 _projectId,
         string calldata _name,
         string calldata _symbol
     ) external returns (IJBToken token);
 
-    function burn(
+    function burnFrom(
         address _holder,
         uint256 _projectId,
         uint256 _amount,
         bool _preferUnstakedTokens
     ) external;
 
-    function mint(
+    function mintFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount,
         bool _preferUnstakedTokens
     ) external;
 
-    function stake(
+    function stakeFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
     ) external;
 
-    function unstake(
+    function unstakeFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
     ) external;
 
-    function lock(
+    function lockFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
     ) external;
 
-    function unlock(
+    function unlockFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
     ) external;
 
-    function transfer(
+    function transferTo(
+        address _recipient,
         address _holder,
         uint256 _projectId,
-        uint256 _amount,
-        address _recipient
+        uint256 _amount
     ) external;
 }

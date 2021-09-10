@@ -6,11 +6,6 @@ import "./IJBDirectory.sol";
 interface IJBTerminal {
     function directory() external view returns (IJBDirectory);
 
-    function migrationIsAllowed(IJBTerminal _terminal)
-        external
-        view
-        returns (bool);
-
     function pay(
         uint256 _projectId,
         address _beneficiary,
@@ -20,9 +15,9 @@ interface IJBTerminal {
         bytes calldata _delegateMetadate
     ) external payable returns (uint256 fundingCycleId);
 
-    function prepForMigrationOf(uint256 _projectId) external;
+    function prepForBalanceTransferOf(uint256 _projectId) external;
 
-    function addToBalance(uint256 _projectId, string memory _memo)
+    function addToBalanceOf(uint256 _projectId, string memory _memo)
         external
         payable;
 

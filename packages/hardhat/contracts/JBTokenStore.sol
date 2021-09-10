@@ -118,7 +118,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
         @param _name The ERC-20's name.
         @param _symbol The ERC-20's symbol.
     */
-    function issue(
+    function issueFor(
         uint256 _projectId,
         string calldata _name,
         string calldata _symbol
@@ -168,7 +168,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
       @param _amount The amount to mint.
       @param _preferUnstakedTokens Whether ERC20's should be converted automatically if they have been issued.
     */
-    function mint(
+    function mintFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount,
@@ -219,7 +219,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
       @param _amount The amount of tokens being burned.
       @param _preferUnstakedTokens If the preference is to burn tokens that have been converted to ERC-20s.
     */
-    function burn(
+    function burnFrom(
         address _holder,
         uint256 _projectId,
         uint256 _amount,
@@ -304,7 +304,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
       @param _projectId The ID of the project whos tokens are being staked.
       @param _amount The amount of tokens to stake.
      */
-    function stake(
+    function stakeFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
@@ -362,7 +362,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
       @param _projectId The ID of the project whos tokens are being unstaked.
       @param _amount The amount of tokens to unstake.
      */
-    function unstake(
+    function unstakeFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
@@ -421,7 +421,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
       @param _projectId The ID of the project whos tokens are being locked.
       @param _amount The amount of tokens to lock.
     */
-    function lock(
+    function lockFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
@@ -467,7 +467,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
       @param _projectId The ID of the project whos tokens are being unlocked.
       @param _amount The amount of tokens to unlock.
     */
-    function unlock(
+    function unlockFor(
         address _holder,
         uint256 _projectId,
         uint256 _amount
@@ -499,16 +499,16 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
       @dev
       Only a ticket holder or an operator can transfer its tokens.
 
+      @param _recipient The recipient of the tokens.
       @param _holder The holder to transfer tokens from.
       @param _projectId The ID of the project whos tokens are being transfered.
       @param _amount The amount of tokens to transfer.
-      @param _recipient The recipient of the tokens.
     */
-    function transfer(
+    function transferTo(
+        address _recipient,
         address _holder,
         uint256 _projectId,
-        uint256 _amount,
-        address _recipient
+        uint256 _amount
     )
         external
         override

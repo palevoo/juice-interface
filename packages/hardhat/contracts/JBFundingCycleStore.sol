@@ -257,7 +257,7 @@ contract JBFundingCycleStore is JBTerminalUtility, IJBFundingCycleStore {
 
         @return fundingCycle The funding cycle that the configuration will take effect during.
     */
-    function configure(
+    function configureFor(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         uint256 _metadata,
@@ -348,7 +348,7 @@ contract JBFundingCycleStore is JBTerminalUtility, IJBFundingCycleStore {
 
       @return fundingCycle The tapped funding cycle.
     */
-    function tap(uint256 _projectId, uint256 _amount)
+    function tapFrom(uint256 _projectId, uint256 _amount)
         external
         override
         onlyTerminal(_projectId)

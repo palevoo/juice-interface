@@ -101,7 +101,7 @@ interface IJBFundingCycleStore {
         view
         returns (BallotState);
 
-    function configure(
+    function configureFor(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         uint256 _metadata,
@@ -109,7 +109,7 @@ interface IJBFundingCycleStore {
         bool _configureActiveFundingCycle
     ) external returns (FundingCycle memory fundingCycle);
 
-    function tap(uint256 _projectId, uint256 _amount)
+    function tapFrom(uint256 _projectId, uint256 _amount)
         external
         returns (FundingCycle memory fundingCycle);
 }

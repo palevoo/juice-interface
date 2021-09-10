@@ -302,7 +302,7 @@ contract JBPaymentTerminalData is
       @param _payoutSplits Any payout splits to set.
       @param _reservedTokenSplits Any reserved token splits to set.
     */
-    function launchProject(
+    function launchProjectFor(
         address _owner,
         bytes32 _handle,
         string calldata _uri,
@@ -319,7 +319,7 @@ contract JBPaymentTerminalData is
 
         // Create the project for the owner. This this contract as the project's terminal,
         // which will give it exclusive access to manage the project's funding cycles and tokens.
-        uint256 _projectId = projects.create(
+        uint256 _projectId = projects.createFor(
             _owner,
             _handle,
             _uri,
@@ -378,7 +378,7 @@ contract JBPaymentTerminalData is
 
       @return The ID of the funding cycle that was successfully configured.
     */
-    function reconfigureFundingCycles(
+    function reconfigureFundingCyclesOf(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
@@ -405,7 +405,7 @@ contract JBPaymentTerminalData is
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
             tokenStore.totalSupplyOf(_projectId)
-        ) _distributeReservedTokens(_projectId, "");
+        ) _distributeReservedTokensOf(_projectId, "");
 
         // Configure the active project if its tokens have yet to be minted.
         bool _shouldConfigureActive = tokenStore.totalSupplyOf(_projectId) == 0;
@@ -440,7 +440,7 @@ contract JBPaymentTerminalData is
 
       @return tokenCount The amount of tokens minted.
     */
-    function mintTokens(
+    function mintTokensOf(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -462,11 +462,11 @@ contract JBPaymentTerminalData is
         // Can't send to the zero address.
         require(
             _beneficiary != address(0),
-            "JBPaymentTerminalData: ZERO_ADDRESS"
+            "JBPaymentTerminalData::mintTokensOf: ZERO_ADDRESS"
         );
 
         // There should be tokens to mint.
-        require(_amount > 0, "JBPaymentTerminalData: NO_OP");
+        require(_amount > 0, "JBPaymentTerminalData::mintTokensOf: NO_OP");
 
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
@@ -474,7 +474,10 @@ contract JBPaymentTerminalData is
         );
 
         // The current funding cycle must not be paused.
-        require(_fundingCycle.mintPaused(), "JBPaymentTerminalData: PAUSED");
+        require(
+            _fundingCycle.mintPaused(),
+            "JBPaymentTerminalData::mintTokensOf: PAUSED"
+        );
 
         // If a weight isn't specified, get the current funding cycle to read the weight from. If there's no current funding cycle, use the base weight.
         _weight = _weight > 0 ? _weight : _fundingCycle.number > 0
@@ -493,7 +496,7 @@ contract JBPaymentTerminalData is
             int256(tokenCount);
 
         // Redeem the tokens, which burns them.
-        tokenStore.mint(
+        tokenStore.mintFor(
             _beneficiary,
             _projectId,
             tokenCount,
@@ -526,7 +529,7 @@ contract JBPaymentTerminalData is
       @param _preferUnstakedTokens Whether ERC20's should be burned first if they have been issued.
 
     */
-    function burnTokens(
+    function burnTokensOf(
         address _holder,
         uint256 _projectId,
         uint256 _tokenCount,
@@ -543,7 +546,7 @@ contract JBPaymentTerminalData is
         )
     {
         // There should be tokens to burn
-        require(_tokenCount > 0, "JBPaymentTerminalData: NO_OP");
+        require(_tokenCount > 0, "JBPaymentTerminalData::burnTokensOf: NO_OP");
 
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
@@ -551,18 +554,22 @@ contract JBPaymentTerminalData is
         );
 
         // The current funding cycle must not be paused.
-        require(_fundingCycle.burnPaused(), "JBPaymentTerminalData: PAUSED");
+        require(
+            _fundingCycle.burnPaused(),
+            "JBPaymentTerminalData::burnTokensOf: PAUSED"
+        );
 
         // Update the token tracker so that reserved tokens will still be correctly mintable.
-        _subtractFromTokenTracker(_projectId, _tokenCount);
+        _subtractFromTokenTrackerOf(_projectId, _tokenCount);
 
         // Burn the tokens.
-        tokenStore.burn(
+        tokenStore.burnFrom(
             _holder,
             _projectId,
             _tokenCount,
             _preferUnstakedTokens
         );
+
         emit BurnTokens(_holder, _projectId, _tokenCount, _memo, msg.sender);
     }
 
@@ -575,13 +582,13 @@ contract JBPaymentTerminalData is
 
       @return The amount of reserved tokens that were minted.
     */
-    function distributeReservedTokens(uint256 _projectId, string memory _memo)
+    function distributeReservedTokensOf(uint256 _projectId, string memory _memo)
         external
         override
         nonReentrant
         returns (uint256)
     {
-        return _distributeReservedTokens(_projectId, _memo);
+        return _distributeReservedTokensOf(_projectId, _memo);
     }
 
     //*********************************************************************//
@@ -618,7 +625,7 @@ contract JBPaymentTerminalData is
       @return tokenCount The number of tokens that were minted.
       @return memo A memo that should be included in the published event.
     */
-    function recordPayment(
+    function recordPaymentFrom(
         address _payer,
         uint256 _amount,
         uint256 _projectId,
@@ -641,10 +648,16 @@ contract JBPaymentTerminalData is
         fundingCycle = fundingCycleStore.currentOf(_projectId);
 
         // The project must have a funding cycle configured.
-        require(fundingCycle.number > 0, "JBPaymentTerminalData: NOT_FOUND");
+        require(
+            fundingCycle.number > 0,
+            "JBPaymentTerminalData::recordPaymentFrom: NOT_FOUND"
+        );
 
         // Must not be paused.
-        require(!fundingCycle.payPaused(), "JBPaymentTerminalData: PAUSED");
+        require(
+            !fundingCycle.payPaused(),
+            "JBPaymentTerminalData::recordPaymentFrom: PAUSED"
+        );
 
         // Save a reference to the delegate to use.
         IJBPayDelegate _delegate;
@@ -688,7 +701,7 @@ contract JBPaymentTerminalData is
             // The token count must be greater than or equal to the minimum expected.
             require(
                 tokenCount >= _minReturnedTokens,
-                "JBPaymentTerminalData: INADEQUATE"
+                "JBPaymentTerminalData::recordPaymentFrom: INADEQUATE"
             );
 
             // Add the amount to the balance of the project.
@@ -697,7 +710,7 @@ contract JBPaymentTerminalData is
             // Mint tokens if needed.
             if (tokenCount > 0) {
                 // Mint the project's tokens for the beneficiary.
-                tokenStore.mint(
+                tokenStore.mintFor(
                     address(uint160(_preferUnstakedTokensAndBeneficiary >> 1)),
                     _projectId,
                     tokenCount,
@@ -748,7 +761,7 @@ contract JBPaymentTerminalData is
       @return fundingCycle The funding cycle during which the withdrawal was made.
       @return withdrawnAmount The amount withdrawn.
     */
-    function recordWithdrawal(
+    function recordWithdrawalFor(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -760,18 +773,24 @@ contract JBPaymentTerminalData is
         returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount)
     {
         // Registers the funds as withdrawn and gets the ID of the funding cycle during which this withdrawal is being made.
-        fundingCycle = fundingCycleStore.tap(_projectId, _amount);
+        fundingCycle = fundingCycleStore.tapFrom(_projectId, _amount);
 
         // Funds cannot be withdrawn if there's no funding cycle.
-        require(fundingCycle.id > 0, "JBPaymentTerminalData: NOT_FOUND");
+        require(
+            fundingCycle.id > 0,
+            "JBPaymentTerminalData::recordWithdrawalFor: NOT_FOUND"
+        );
 
         // The funding cycle must not be paused.
-        require(!fundingCycle.tapPaused(), "JBPaymentTerminalData: PAUSED");
+        require(
+            !fundingCycle.tapPaused(),
+            "JBPaymentTerminalData::recordWithdrawalFor: PAUSED"
+        );
 
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "JBPaymentTerminalData: UNEXPECTED_CURRENCY"
+            "JBPaymentTerminalData::recordWithdrawalFor: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -783,13 +802,13 @@ contract JBPaymentTerminalData is
         // The amount being withdrawn must be at least as much as was expected.
         require(
             _minReturnedWei <= withdrawnAmount,
-            "JBPaymentTerminalData: INADEQUATE"
+            "JBPaymentTerminalData::recordWithdrawalFor: INADEQUATE"
         );
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "JBPaymentTerminalData: INSUFFICIENT_FUNDS"
+            "JBPaymentTerminalData::recordWithdrawalFor: INSUFFICIENT_FUNDS"
         );
 
         // Removed the withdrawn funds from the project's balance.
@@ -809,7 +828,7 @@ contract JBPaymentTerminalData is
       @return fundingCycle The funding cycle during which the withdrawal is being made.
       @return withdrawnAmount The amount withdrawn.
     */
-    function recordUsedAllowance(
+    function recordUsedAllowanceOf(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -826,7 +845,7 @@ contract JBPaymentTerminalData is
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "JBPaymentTerminalData: UNEXPECTED_CURRENCY"
+            "JBPaymentTerminalData::recordUsedAllowanceOf: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -841,19 +860,19 @@ contract JBPaymentTerminalData is
                 remainingOverflowAllowanceOf[_projectId][
                     fundingCycle.configured
                 ],
-            "JBPaymentTerminalData: NOT_ALLOWED"
+            "JBPaymentTerminalData::recordUsedAllowanceOf: NOT_ALLOWED"
         );
 
         // The amount being withdrawn must be at least as much as was expected.
         require(
             _minReturnedWei <= withdrawnAmount,
-            "JBPaymentTerminalData: INADEQUATE"
+            "JBPaymentTerminalData::recordUsedAllowanceOf: INADEQUATE"
         );
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "JBPaymentTerminalData: INSUFFICIENT_FUNDS"
+            "JBPaymentTerminalData::recordUsedAllowanceOf: INSUFFICIENT_FUNDS"
         );
 
         // Store the decremented value.
@@ -884,7 +903,7 @@ contract JBPaymentTerminalData is
       @return claimAmount The amount claimed.
       @return memo A memo that should be passed along to the emitted event.
     */
-    function recordRedemption(
+    function recordRedemptionFor(
         address _holder,
         uint256 _projectId,
         uint256 _tokenCount,
@@ -905,14 +924,17 @@ contract JBPaymentTerminalData is
         // The holder must have the specified number of the project's tokens.
         require(
             tokenStore.balanceOf(_holder, _projectId) >= _tokenCount,
-            "JBPaymentTerminalData: INSUFFICIENT_TOKENS"
+            "JBPaymentTerminalData::recordRedemptionFor: INSUFFICIENT_TOKENS"
         );
 
         // Get a reference to the project's current funding cycle.
         fundingCycle = fundingCycleStore.currentOf(_projectId);
 
         // The current funding cycle must not be paused.
-        require(!fundingCycle.redeemPaused(), "JBPaymentTerminalData: PAUSED");
+        require(
+            !fundingCycle.redeemPaused(),
+            "JBPaymentTerminalData::recordRedemptionFor: PAUSED"
+        );
 
         // Save a reference to the delegate to use.
         IJBRedemptionDelegate _delegate;
@@ -941,20 +963,20 @@ contract JBPaymentTerminalData is
         // The amount being claimed must be at least as much as was expected.
         require(
             claimAmount >= _minReturnedWei,
-            "JBPaymentTerminalData: INADEQUATE"
+            "JBPaymentTerminalData::recordRedemptionFor: INADEQUATE"
         );
 
         // The amount being claimed must be within the project's balance.
         require(
             claimAmount <= balanceOf[_projectId],
-            "JBPaymentTerminalData: INSUFFICIENT_FUNDS"
+            "JBPaymentTerminalData::recordRedemptionFor: INSUFFICIENT_FUNDS"
         );
 
         // Redeem the tokens, which burns them.
         if (_tokenCount > 0) {
             // Update the token tracker so that reserved tokens will still be correctly mintable.
-            _subtractFromTokenTracker(_projectId, _tokenCount);
-            tokenStore.burn(_holder, _projectId, _tokenCount, true);
+            _subtractFromTokenTrackerOf(_projectId, _tokenCount);
+            tokenStore.burnFrom(_holder, _projectId, _tokenCount, true);
         }
 
         // Remove the redeemed funds from the project's balance.
@@ -979,22 +1001,22 @@ contract JBPaymentTerminalData is
 
     /**
       @notice
-      Sets up any peice of internal state necessary for the specified project to migrate to this terminal.
+      Sets up any peice of internal state necessary for the specified project to transfer its balance to this terminal.
 
       @dev
       This must be called before this contract is the current terminal for the project.
 
       @dev
-      This function can be called many times, but must be called in the same transaction that migrates a project to this terminal.
+      This function can be called many times, but must be called in the same transaction that transfers a projects balance to this terminal.
 
-      @param _projectId The ID of the project that is being migrated to this terminal.
+      @param _projectId The ID of the project that is having its balance transfered to this terminal.
     */
-    function recordPrepForMigrationOf(uint256 _projectId)
+    function recordPrepForBalanceTransferOf(uint256 _projectId)
         external
         override
         onlyPaymentTerminal
     {
-        // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon migration.
+        // Set the tracker to be the total supply of tokens so that there's no reserved token supply to mint upon balance transfer.
         _processedTokenTrackerOf[_projectId] = int256(
             tokenStore.totalSupplyOf(_projectId)
         );
@@ -1002,14 +1024,14 @@ contract JBPaymentTerminalData is
 
     /**
       @notice
-      Allows a project owner to migrate its funds and treasury operations to a new contract.
+      Allows a project owner to transfer its balance and treasury operations to a new contract.
 
       @dev
-      Only the payment layer can record migrations.
+      Only the payment layer can record balance transfers.
 
-      @param _projectId The ID of the project being migrated.
+      @param _projectId The ID of the project having its balance transfered.
     */
-    function recordMigration(uint256 _projectId)
+    function recordBalanceTransferFor(uint256 _projectId)
         external
         override
         onlyPaymentTerminal
@@ -1019,7 +1041,7 @@ contract JBPaymentTerminalData is
         if (
             uint256(_processedTokenTrackerOf[_projectId]) !=
             tokenStore.totalSupplyOf(_projectId)
-        ) _distributeReservedTokens(_projectId, "");
+        ) _distributeReservedTokensOf(_projectId, "");
 
         // Get a reference to the project's currently recorded balance.
         balance = balanceOf[_projectId];
@@ -1035,10 +1057,10 @@ contract JBPaymentTerminalData is
       @dev
       Only the payment layer can record added balance.
 
-      @param _amount The amount added, in wei.
       @param _projectId The ID of the project to which the funds being added belong.
+      @param _amount The amount added, in wei.
     */
-    function recordAddedBalance(uint256 _amount, uint256 _projectId)
+    function recordAddedBalanceFor(uint256 _projectId, uint256 _amount)
         external
         override
         onlyPaymentTerminal
@@ -1060,7 +1082,7 @@ contract JBPaymentTerminalData is
 
       @param _paymentTerminal The payment layer contract to set.
     */
-    function setPaymentTerminal(IJBTerminal _paymentTerminal)
+    function setPaymentTerminalOf(IJBTerminal _paymentTerminal)
         external
         override
         onlyOwner
@@ -1089,19 +1111,19 @@ contract JBPaymentTerminalData is
         // The reserved project token rate must be less than or equal to 200.
         require(
             _metadata.reservedRate <= 200,
-            "JBPaymentTerminalData: BAD_RESERVED_RATE"
+            "JBPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_RESERVED_RATE"
         );
 
         // The redemption rate must be between 0 and 200.
         require(
             _metadata.redemptionRate <= 200,
-            "JBPaymentTerminalData: BAD_REDEMPTION_RATE"
+            "JBPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_REDEMPTION_RATE"
         );
 
         // The ballot redemption rate must be less than or equal to 200.
         require(
             _metadata.ballotRedemptionRate <= 200,
-            "JBPaymentTerminalData: BAD_BALLOT_REDEMPTION_RATE"
+            "JBPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_BALLOT_REDEMPTION_RATE"
         );
 
         // version 1 in the first 8 bytes.
@@ -1134,10 +1156,10 @@ contract JBPaymentTerminalData is
       @notice 
       See docs for `distributeReservedTokens`
     */
-    function _distributeReservedTokens(uint256 _projectId, string memory _memo)
-        private
-        returns (uint256 count)
-    {
+    function _distributeReservedTokensOf(
+        uint256 _projectId,
+        string memory _memo
+    ) private returns (uint256 count) {
         // Get the current funding cycle to read the reserved rate from.
         FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
             _projectId
@@ -1165,11 +1187,11 @@ contract JBPaymentTerminalData is
         // Distribute tokens to splits and get a reference to the leftover amount to mint after all splits have gotten their share.
         uint256 _leftoverTokenCount = count == 0
             ? 0
-            : _distributeToReservedTokenSplits(_fundingCycle, count);
+            : _distributeToReservedTokenSplitsOf(_fundingCycle, count);
 
         // Mint any leftover tokens to the project owner.
         if (_leftoverTokenCount > 0)
-            tokenStore.mint(_owner, _projectId, _leftoverTokenCount, false);
+            tokenStore.mintFor(_owner, _projectId, _leftoverTokenCount, false);
 
         emit DistributeReservedTokens(
             _fundingCycle.id,
@@ -1291,7 +1313,7 @@ contract JBPaymentTerminalData is
 
       @return leftoverAmount If the splits percents dont add up to 100%, the leftover amount is returned.
     */
-    function _distributeToReservedTokenSplits(
+    function _distributeToReservedTokenSplitsOf(
         FundingCycle memory _fundingCycle,
         uint256 _amount
     ) private returns (uint256 leftoverAmount) {
@@ -1320,7 +1342,7 @@ contract JBPaymentTerminalData is
 
             // Mints tokens for the split if needed.
             if (_tokenCount > 0)
-                tokenStore.mint(
+                tokenStore.mintFor(
                     // If a projectId is set in the split, set the project's owner as the beneficiary.
                     // Otherwise use the split's beneficiary.
                     _split.projectId != 0
@@ -1366,7 +1388,7 @@ contract JBPaymentTerminalData is
       @param _amount The amount to subtract.
 
     */
-    function _subtractFromTokenTracker(uint256 _projectId, uint256 _amount)
+    function _subtractFromTokenTrackerOf(uint256 _projectId, uint256 _amount)
         private
     {
         // Get a reference to the processed token tracker for the project.
@@ -1433,7 +1455,7 @@ contract JBPaymentTerminalData is
         bool _shouldConfigureActive
     ) private returns (uint256) {
         // Configure the funding cycle's properties.
-        FundingCycle memory _fundingCycle = fundingCycleStore.configure(
+        FundingCycle memory _fundingCycle = fundingCycleStore.configureFor(
             _projectId,
             _properties,
             _packedMetadata,

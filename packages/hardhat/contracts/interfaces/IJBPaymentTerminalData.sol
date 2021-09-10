@@ -118,7 +118,7 @@ interface IJBPaymentTerminalData {
         view
         returns (uint256);
 
-    function launchProject(
+    function launchProjectFor(
         address _owner,
         bytes32 _handle,
         string calldata _uri,
@@ -129,7 +129,7 @@ interface IJBPaymentTerminalData {
         Split[] memory _reservedTokenSplits
     ) external;
 
-    function reconfigureFundingCycles(
+    function reconfigureFundingCyclesOf(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadataV2 calldata _metadata,
@@ -138,51 +138,7 @@ interface IJBPaymentTerminalData {
         Split[] memory _reservedTokenSplits
     ) external returns (uint256);
 
-    function recordAddedBalance(uint256 _amount, uint256 _projectId) external;
-
-    function recordWithdrawal(
-        uint256 _projectId,
-        uint256 _amount,
-        uint256 _currency,
-        uint256 _minReturnedWei
-    )
-        external
-        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount);
-
-    function recordUsedAllowance(
-        uint256 _projectId,
-        uint256 _amount,
-        uint256 _currency,
-        uint256 _minReturnedWei
-    )
-        external
-        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount);
-
-    function recordRedemption(
-        address _holder,
-        uint256 _projectId,
-        uint256 _tokenCount,
-        uint256 _minReturnedWei,
-        address payable _beneficiary,
-        string memory _memo,
-        bytes memory _delegateMetadata
-    )
-        external
-        returns (
-            FundingCycle memory fundingCycle,
-            uint256 claimAmount,
-            string memory _delegatedMemo
-        );
-
-    function burnTokens(
-        address _holder,
-        uint256 _projectId,
-        uint256 _tokenCount,
-        string calldata _memo,
-        bool _preferUnstakedTokens
-    ) external;
-
-    function mintTokens(
+    function mintTokensOf(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -192,7 +148,19 @@ interface IJBPaymentTerminalData {
         bool _preferUnstakedTokens
     ) external returns (uint256 tokenCount);
 
-    function recordPayment(
+    function burnTokensOf(
+        address _holder,
+        uint256 _projectId,
+        uint256 _tokenCount,
+        string calldata _memo,
+        bool _preferUnstakedTokens
+    ) external;
+
+    function distributeReservedTokensOf(uint256 _projectId, string memory _memo)
+        external
+        returns (uint256 amount);
+
+    function recordPaymentFrom(
         address _payer,
         uint256 _amount,
         uint256 _projectId,
@@ -209,15 +177,48 @@ interface IJBPaymentTerminalData {
             string memory delegatedMemo
         );
 
-    function distributeReservedTokens(uint256 _projectId, string memory _memo)
+    function recordWithdrawalFor(
+        uint256 _projectId,
+        uint256 _amount,
+        uint256 _currency,
+        uint256 _minReturnedWei
+    )
         external
-        returns (uint256 amount);
+        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount);
 
-    function recordMigration(uint256 _projectId)
+    function recordUsedAllowanceOf(
+        uint256 _projectId,
+        uint256 _amount,
+        uint256 _currency,
+        uint256 _minReturnedWei
+    )
+        external
+        returns (FundingCycle memory fundingCycle, uint256 withdrawnAmount);
+
+    function recordRedemptionFor(
+        address _holder,
+        uint256 _projectId,
+        uint256 _tokenCount,
+        uint256 _minReturnedWei,
+        address payable _beneficiary,
+        string memory _memo,
+        bytes memory _delegateMetadata
+    )
+        external
+        returns (
+            FundingCycle memory fundingCycle,
+            uint256 claimAmount,
+            string memory _delegatedMemo
+        );
+
+    function recordPrepForBalanceTransferOf(uint256 _projectId) external;
+
+    function recordBalanceTransferFor(uint256 _projectId)
         external
         returns (uint256 balance);
 
-    function recordPrepForMigrationOf(uint256 _projectId) external;
+    function recordAddedBalanceFor(uint256 _projectId, uint256 _amount)
+        external;
 
-    function setPaymentTerminal(IJBTerminal _paymentTerminal) external;
+    function setPaymentTerminalOf(IJBTerminal _paymentTerminal) external;
 }

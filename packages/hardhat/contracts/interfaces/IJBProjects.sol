@@ -67,18 +67,18 @@ interface IJBProjects is IERC721 {
 
     function exists(uint256 _projectId) external view returns (bool);
 
-    function create(
+    function createFor(
         address _owner,
         bytes32 _handle,
         string calldata _uri,
         IJBTerminal _jbTerminal
     ) external returns (uint256 id);
 
-    function setHandle(uint256 _projectId, bytes32 _handle) external;
+    function setHandleOf(uint256 _projectId, bytes32 _handle) external;
 
-    function setUri(uint256 _projectId, string calldata _uri) external;
+    function setUriOf(uint256 _projectId, string calldata _uri) external;
 
-    function transferHandle(
+    function transferHandleOf(
         uint256 _projectId,
         address _to,
         bytes32 _newHandle
@@ -89,4 +89,8 @@ interface IJBProjects is IERC721 {
         address _for,
         uint256 _projectId
     ) external;
+
+    function challengeHandle(bytes32 _handle) external;
+
+    function renewHandleOf(uint256 _projectId) external;
 }

@@ -63,8 +63,8 @@ contract JBPaymentTerminal is
     */
     IJBPaymentTerminalData public immutable override data;
 
-    // Whether or not a particular contract is available for projects to migrate their funds and Tickets to.
-    mapping(IJBTerminal => bool) public override migrationIsAllowed;
+    // Whether or not a particular contract is available for projects to transfer their balance to.
+    mapping(IJBTerminal => bool) public override balanceTransferIsAllowedTo;
 
     //*********************************************************************//
     // ------------------------- external views -------------------------- //
@@ -159,7 +159,7 @@ contract JBPaymentTerminal is
 
       @return The ID of the funding cycle during which the distribution was made.
     */
-    function distributePayouts(
+    function distributePayoutsOf(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -168,7 +168,12 @@ contract JBPaymentTerminal is
     ) external override nonReentrant returns (uint256) {
         // Record the withdrawal in the data layer.
         (FundingCycle memory _fundingCycle, uint256 _withdrawnAmount) = data
-            .recordWithdrawal(_projectId, _amount, _currency, _minReturnedWei);
+            .recordWithdrawalFor(
+                _projectId,
+                _amount,
+                _currency,
+                _minReturnedWei
+            );
 
         // Get a reference to the project owner, which will receive tokens from paying the platform fee
         // and receive any extra distributable funds not allocated to payout splits.
@@ -182,7 +187,7 @@ contract JBPaymentTerminal is
         // The platform project's ID is 1.
         uint256 _feeAmount = _fundingCycle.fee == 0 || _projectId == 1
             ? 0
-            : _takeFee(
+            : _takeFeeFrom(
                 _withdrawnAmount,
                 _fundingCycle.fee,
                 _projectOwner,
@@ -191,7 +196,7 @@ contract JBPaymentTerminal is
 
         // Payout to splits and get a reference to the leftover transfer amount after all mods have been paid.
         // The net transfer amount is the withdrawn amount minus the fee.
-        uint256 _leftoverTransferAmount = _distributeToPayoutSplits(
+        uint256 _leftoverTransferAmount = _distributeToPayoutSplitsOf(
             _fundingCycle,
             _withdrawnAmount - _feeAmount,
             string(bytes.concat("Payout from @", _handle))
@@ -217,12 +222,16 @@ contract JBPaymentTerminal is
     }
 
     /**
-      @notice Allows a project to send funds from its overflow up to the preconfigured allowance.
+      @notice 
+      Allows a project to send funds from its overflow up to the preconfigured allowance.
+
       @param _projectId The ID of the project to use the allowance of.
       @param _amount The amount of the allowance to use.
       @param _beneficiary The address to send the funds to.
+
+      @return The ID of the funding cycle during which the allowance was use.
     */
-    function useAllowance(
+    function useAllowanceOf(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -241,7 +250,7 @@ contract JBPaymentTerminal is
     {
         // Record the use of the allowance in the data layer.
         (FundingCycle memory _fundingCycle, uint256 _withdrawnAmount) = data
-            .recordUsedAllowance(
+            .recordUsedAllowanceOf(
                 _projectId,
                 _amount,
                 _currency,
@@ -260,7 +269,7 @@ contract JBPaymentTerminal is
         // The platform project's ID is 1.
         uint256 _feeAmount = _fundingCycle.fee == 0 || _projectId == 1
             ? 0
-            : _takeFee(
+            : _takeFeeFrom(
                 _withdrawnAmount,
                 _fundingCycle.fee,
                 _projectOwner,
@@ -286,7 +295,7 @@ contract JBPaymentTerminal is
             msg.sender
         );
 
-        return _fundingCycle.configured;
+        return _fundingCycle.id;
     }
 
     /**
@@ -306,7 +315,7 @@ contract JBPaymentTerminal is
 
       @return claimAmount The amount of ETH that the tokens were redeemed for, in wei.
     */
-    function redeemTokens(
+    function redeemTokensOf(
         address _holder,
         uint256 _projectId,
         uint256 _tokenCount,
@@ -326,13 +335,16 @@ contract JBPaymentTerminal is
         returns (uint256 claimAmount)
     {
         // Can't send claimed funds to the zero address.
-        require(_beneficiary != address(0), "JBPaymentTerminal: ZERO_ADDRESS");
+        require(
+            _beneficiary != address(0),
+            "JBPaymentTerminal::redeemTokensOf: ZERO_ADDRESS"
+        );
         {
             // Keep a reference to the funding cycles during which the redemption is being made.
             FundingCycle memory _fundingCycle;
 
             // Record the redemption in the data layer.
-            (_fundingCycle, claimAmount, _memo) = data.recordRedemption(
+            (_fundingCycle, claimAmount, _memo) = data.recordRedemptionFor(
                 _holder,
                 _projectId,
                 _tokenCount,
@@ -367,9 +379,9 @@ contract JBPaymentTerminal is
       Only a project's owner or a designated operator can migrate it.
 
       @param _projectId The ID of the project being migrated.
-      @param _to The terminal contract that will gain the project's funds.
+      @param _terminal The terminal contract that will gain the project's funds.
     */
-    function migrate(uint256 _projectId, IJBTerminal _to)
+    function transferBalanceOf(uint256 _projectId, IJBTerminal _terminal)
         external
         override
         nonReentrant
@@ -382,29 +394,32 @@ contract JBPaymentTerminal is
         // The data layer must be the project's current terminal.
         require(
             address(directory.terminalOf(_projectId)) == address(data),
-            "JBPaymentTerminal: UNAUTHORIZED"
+            "JBPaymentTerminal::transferBalanceOf: UNAUTHORIZED"
         );
 
-        // The migration destination must be allowed.
-        require(migrationIsAllowed[_to], "JBPaymentTerminal: NOT_ALLOWED");
+        // The destination must be allowed.
+        require(
+            balanceTransferIsAllowedTo[_terminal],
+            "JBPaymentTerminal::transferBalanceOf: NOT_ALLOWED"
+        );
 
-        // Allow the terminal receiving the project's funds and operations to prepare for the migration.
-        _to.prepForMigrationOf(_projectId);
+        // Allow the terminal receiving the project's funds and operations to prepare for the balance transfer.
+        _terminal.prepForBalanceTransferOf(_projectId);
 
-        // Record the migration in the data layer.
-        uint256 _balance = data.recordMigration(_projectId);
+        // Record the balance transfer in the data layer.
+        uint256 _balance = data.recordBalanceTransferFor(_projectId);
 
         // Switch the terminal that the terminal directory will point to for this project.
-        directory.setTerminal(_projectId, _to);
+        directory.setTerminalOf(_projectId, _terminal);
 
         // Move the funds to the new contract if needed.
         if (_balance > 0)
-            _to.addToBalance{value: _balance}(
+            _terminal.addToBalanceOf{value: _balance}(
                 _projectId,
                 "Migration from JBPaymentTerminal"
             );
 
-        emit Migrate(_projectId, _to, _balance, msg.sender);
+        emit TransferBalance(_projectId, _terminal, _balance, msg.sender);
     }
 
     /**
@@ -414,49 +429,55 @@ contract JBPaymentTerminal is
       @param _projectId The ID of the project to which the funds received belong.
       @param _memo A memo to include in the emitted event.
     */
-    function addToBalance(uint256 _projectId, string memory _memo)
+    function addToBalanceOf(uint256 _projectId, string memory _memo)
         external
         payable
         override
     {
         // Amount must be greater than 0.
-        require(msg.value > 0, "JBPaymentTerminal: NO_OP");
+        require(msg.value > 0, "JBPaymentTerminal::addToBalanceOf: NO_OP");
 
         // Record the added funds in the data later.
-        data.recordAddedBalance(msg.value, _projectId);
+        data.recordAddedBalanceFor(_projectId, msg.value);
 
         emit AddToBalance(_projectId, msg.value, _memo, msg.sender);
     }
 
     /**
       @notice
-      Adds a Terminal address to the allow list that project owners can migrate its funds and treasury operations to.
+      Adds a Terminal address to the allow list that project owners can transfer its balance and treasury operations to.
 
       @dev
-      Only this contract's owner can add a contract to the migration allow list.
+      Only this contract's owner can add a contract to the balance transfer allow list.
 
       @param _terminal The terminal contract to allow.
     */
-    function allowMigration(IJBTerminal _terminal) external override onlyOwner {
+    function allowBalanceTransferTo(IJBTerminal _terminal)
+        external
+        override
+        onlyOwner
+    {
         // Toggle the contract as allowed.
-        migrationIsAllowed[_terminal] = !migrationIsAllowed[_terminal];
+        balanceTransferIsAllowedTo[_terminal] = !balanceTransferIsAllowedTo[
+            _terminal
+        ];
 
-        emit AllowMigration(_terminal);
+        emit AllowBalanceTransfer(_terminal);
     }
 
     /**
       @notice
-      Sets up any peice of internal state necessary for the specified project to migrate to this terminal.
+      Sets up any peice of internal state necessary for the specified project to transfer its balance to this terminal.
 
       @dev
       This must be called before this contract is the current terminal for the project.
 
       @dev
-      This function can be called many times, but must be called in the same transaction that migrates a project to this terminal.
+      This function can be called many times, but must be called in the same transaction that transfers a projects balance to this terminal.
 
-      @param _projectId The ID of the project that is being migrated to this terminal.
+      @param _projectId The ID of the project that is having its balance transfered to this terminal.
     */
-    function prepForMigrationOf(uint256 _projectId)
+    function prepForBalanceTransferOf(uint256 _projectId)
         external
         override
         nonReentrant
@@ -464,9 +485,9 @@ contract JBPaymentTerminal is
         // This function can only be called if this contract isn't already the project's current terminal.
         require(
             directory.terminalOf(_projectId) != this,
-            "JBPaymentTerminal: NOT_ALLOWED"
+            "JBPaymentTerminal::prepForBalanceTransferOf: NOT_ALLOWED"
         );
-        data.recordPrepForMigrationOf(_projectId);
+        data.recordPrepForBalanceTransferOf(_projectId);
     }
 
     //*********************************************************************//
@@ -484,7 +505,7 @@ contract JBPaymentTerminal is
       @return leftoverAmount If the split module percents dont add up to 100%, the leftover amount is returned.
 
     */
-    function _distributeToPayoutSplits(
+    function _distributeToPayoutSplitsOf(
         FundingCycle memory _fundingCycle,
         uint256 _amount,
         string memory _memo
@@ -537,7 +558,7 @@ contract JBPaymentTerminal is
                     // The project must have a terminal to send funds to.
                     require(
                         _terminal != IJBTerminal(address(0)),
-                        "JBPaymentTerminal: BAD_SPLIT"
+                        "JBPaymentTerminal::_distributeToPayoutSplitsOf: BAD_SPLIT"
                     );
 
                     // Save gas if this contract is being used as the terminal.
@@ -584,21 +605,21 @@ contract JBPaymentTerminal is
       @notice 
       Takes a fee into the platform's project, which has an id of 1.
 
-      @param _from The amount to take a fee from.
+      @param _amount The amount to take a fee from.
       @param _percent The percent fee to take. Out of 200.
       @param _beneficiary The address to print the platforms tokens for.
       @param _memo A memo to send with the fee.
 
       @return feeAmount The amount of the fee taken.
     */
-    function _takeFee(
-        uint256 _from,
+    function _takeFeeFrom(
+        uint256 _amount,
         uint256 _percent,
         address _beneficiary,
         string memory _memo
     ) private returns (uint256 feeAmount) {
         // The amount of ETH from the _tappedAmount to pay as a fee.
-        feeAmount = _from - PRBMath.mulDiv(_from, 200, _percent + 200);
+        feeAmount = _amount - PRBMath.mulDiv(_amount, 200, _percent + 200);
 
         // Nothing to do if there's no fee to take.
         if (feeAmount == 0) return 0;
@@ -633,17 +654,20 @@ contract JBPaymentTerminal is
         bytes memory _delegateMetadata
     ) private returns (uint256) {
         // Positive payments only.
-        require(_amount > 0, "JBPaymentTerminal: BAD_AMOUNT");
+        require(_amount > 0, "JBPaymentTerminal::_pay: BAD_AMOUNT");
 
         // Cant send tokens to the zero address.
-        require(_beneficiary != address(0), "JBPaymentTerminal: ZERO_ADDRESS");
+        require(
+            _beneficiary != address(0),
+            "JBPaymentTerminal::_pay: ZERO_ADDRESS"
+        );
 
         FundingCycle memory _fundingCycle;
         uint256 _weight;
         uint256 _tokenCount;
 
         // Record the payment in the data layer.
-        (_fundingCycle, _weight, _tokenCount, _memo) = data.recordPayment(
+        (_fundingCycle, _weight, _tokenCount, _memo) = data.recordPaymentFrom(
             msg.sender,
             _amount,
             _projectId,

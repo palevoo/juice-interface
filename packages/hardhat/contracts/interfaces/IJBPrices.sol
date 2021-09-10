@@ -16,6 +16,6 @@ interface IJBPrices {
 
     function getETHPriceFor(uint256 _currency) external view returns (uint256);
 
-    function addFeed(AggregatorV3Interface _priceFeed, uint256 _currency)
+    function addFeedFor(uint256 _currency, AggregatorV3Interface _priceFeed)
         external;
 }

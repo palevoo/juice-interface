@@ -79,7 +79,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
         @return The new project's ID.
     */
-    function create(
+    function createFor(
         address _owner,
         bytes32 _handle,
         string calldata _uri,
@@ -110,7 +110,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
         // Set the project's terminal if needed.
         if (_terminal != IJBTerminal(address(0)))
-            _terminal.directory().setTerminal(count, _terminal);
+            _terminal.directory().setTerminalOf(count, _terminal);
 
         emit Create(count, _owner, _handle, _uri, _terminal, msg.sender);
 
@@ -127,7 +127,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
       @param _projectId The ID of the project.
       @param _handle The new unique handle for the project.
     */
-    function setHandle(uint256 _projectId, bytes32 _handle)
+    function setHandleOf(uint256 _projectId, bytes32 _handle)
         external
         override
         requirePermission(ownerOf(_projectId), _projectId, Operations.SetHandle)
@@ -161,7 +161,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
       @param _projectId The ID of the project.
       @param _uri An ipfs CDN to more info about the project. Don't include the leading ipfs://
     */
-    function setUri(uint256 _projectId, string calldata _uri)
+    function setUriOf(uint256 _projectId, string calldata _uri)
         external
         override
         requirePermission(ownerOf(_projectId), _projectId, Operations.SetUri)
@@ -183,7 +183,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
       @param _to The address that can now reallocate the handle.
       @param _newHandle The new unique handle for the project that will replace the transfered one.
     */
-    function transferHandle(
+    function transferHandleOf(
         uint256 _projectId,
         address _to,
         bytes32 _newHandle
@@ -283,7 +283,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
       @param _handle The handle to challenge.
     */
-    function challengeHandle(bytes32 _handle) external {
+    function challengeHandle(bytes32 _handle) external override {
         // No need to challenge a handle that's not taken.
         require(
             projectFor[_handle] > 0,
@@ -313,8 +313,9 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
       @param _projectId The ID of the project that current has the handle being renewed.
     */
-    function renewHandle(uint256 _projectId)
+    function renewHandleOf(uint256 _projectId)
         external
+        override
         requirePermission(
             ownerOf(_projectId),
             _projectId,

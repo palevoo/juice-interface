@@ -15,7 +15,7 @@ interface IJBPaymentTerminal {
         string memo,
         address caller
     );
-    event Migrate(
+    event TransferBalance(
         uint256 indexed projectId,
         IJBTerminal indexed to,
         uint256 amount,
@@ -73,7 +73,7 @@ interface IJBPaymentTerminal {
         uint256 amount,
         address caller
     );
-    event AllowMigration(IJBTerminal terminal);
+    event AllowBalanceTransfer(IJBTerminal terminal);
 
     function projects() external view returns (IJBProjects);
 
@@ -81,7 +81,12 @@ interface IJBPaymentTerminal {
 
     function data() external view returns (IJBPaymentTerminalData);
 
-    function distributePayouts(
+    function balanceTransferIsAllowedTo(IJBTerminal _terminal)
+        external
+        view
+        returns (bool);
+
+    function distributePayoutsOf(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -89,7 +94,7 @@ interface IJBPaymentTerminal {
         string memory _memo
     ) external returns (uint256);
 
-    function redeemTokens(
+    function redeemTokensOf(
         address _holder,
         uint256 _projectId,
         uint256 _count,
@@ -99,7 +104,7 @@ interface IJBPaymentTerminal {
         bytes calldata _delegateMetadata
     ) external returns (uint256 claimedAmount);
 
-    function useAllowance(
+    function useAllowanceOf(
         uint256 _projectId,
         uint256 _amount,
         uint256 _currency,
@@ -107,7 +112,7 @@ interface IJBPaymentTerminal {
         address payable _beneficiary
     ) external returns (uint256 fundingCycleNumber);
 
-    function migrate(uint256 _projectId, IJBTerminal _to) external;
+    function transferBalanceOf(uint256 _projectId, IJBTerminal _to) external;
 
-    function allowMigration(IJBTerminal _contract) external;
+    function allowBalanceTransferTo(IJBTerminal _contract) external;
 }

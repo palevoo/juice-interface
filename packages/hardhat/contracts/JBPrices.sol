@@ -66,10 +66,10 @@ contract JBPrices is IJBPrices, Ownable {
       @dev
       Current feeds can't be modified.
 
-      @param _feed The price feed being added.
       @param _currency The currency that the price feed is for.
+      @param _feed The price feed being added.
     */
-    function addFeed(AggregatorV3Interface _feed, uint256 _currency)
+    function addFeedFor(uint256 _currency, AggregatorV3Interface _feed)
         external
         override
         onlyOwner
