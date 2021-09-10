@@ -32,8 +32,8 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
     /// @notice Each project's handle.
     mapping(uint256 => bytes32) public override handleOf;
 
-    /// @notice The project that each unique handle represents.
-    mapping(bytes32 => uint256) public override projectFor;
+    /// @notice The ID that each unique handle represents.
+    mapping(bytes32 => uint256) public override idFor;
 
     /// @notice Handles that have been transfered to the specified address.
     mapping(bytes32 => address) public override transferAddressFor;
@@ -67,17 +67,17 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
     /**
         @notice 
-        Create a new project.
+        Create a new project for the specified owner.
 
         @dev 
         Anyone can create a project on an owner's behalf.
 
-        @param _owner The owner of the project.
-        @param _handle A unique handle for the project.
-        @param _uri An ipfs CID to more info about the project.
+        @param _owner The address that will be the owner of the project.
+        @param _handle A unique string to associate with the project that will resolve to its token ID.
+        @param _uri An IPFS CID hash where metadata about the project has been uploaded. An empty string is acceptable if no metadata is being provided.
         @param _terminal The terminal to set for this project so that it can start receiving payments.
 
-        @return The new project's ID.
+        @return The token ID of the newly created project
     */
     function createFor(
         address _owner,
@@ -86,13 +86,12 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
         IJBTerminal _terminal
     ) external override returns (uint256) {
         // Handle must exist.
-        require(_handle != bytes32(0), "JBProjects::create: EMPTY_HANDLE");
+        require(_handle != bytes32(0), "JBProjects::createFor: EMPTY_HANDLE");
 
         // Handle must be unique.
         require(
-            projectFor[_handle] == 0 &&
-                transferAddressFor[_handle] == address(0),
-            "JBProjects::create: HANDLE_TAKEN"
+            idFor[_handle] == 0 && transferAddressFor[_handle] == address(0),
+            "JBProjects::createFor: HANDLE_TAKEN"
         );
 
         // Increment the count, which will be used as the ID.
@@ -103,7 +102,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
         // Set the handle stored values.
         handleOf[count] = _handle;
-        projectFor[_handle] = count;
+        idFor[_handle] = count;
 
         // Set the URI if one was provided.
         if (bytes(_uri).length > 0) uriOf[count] = _uri;
@@ -137,15 +136,14 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
         // Handle must be unique.
         require(
-            projectFor[_handle] == 0 &&
-                transferAddressFor[_handle] == address(0),
+            idFor[_handle] == 0 && transferAddressFor[_handle] == address(0),
             "JBProjects::setHandle: HANDLE_TAKEN"
         );
 
         // Register the change in the resolver.
-        projectFor[handleOf[_projectId]] = 0;
+        idFor[handleOf[_projectId]] = 0;
 
-        projectFor[_handle] = _projectId;
+        idFor[_handle] = _projectId;
         handleOf[_projectId] = _handle;
 
         emit SetHandle(_projectId, _handle, msg.sender);
@@ -199,8 +197,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
         );
 
         require(
-            projectFor[_newHandle] == 0 &&
-                transferAddressFor[_handle] == address(0),
+            idFor[_newHandle] == 0 && transferAddressFor[_handle] == address(0),
             "JBProjects::transferHandle: HANDLE_TAKEN"
         );
 
@@ -208,10 +205,10 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
         _handle = handleOf[_projectId];
 
         // Remove the resolver for the transfered handle.
-        projectFor[_handle] = 0;
+        idFor[_handle] = 0;
 
         // If the handle is changing, register the change in the resolver.
-        projectFor[_newHandle] = _projectId;
+        idFor[_newHandle] = _projectId;
         handleOf[_projectId] = _newHandle;
 
         // Transfer the current handle.
@@ -259,10 +256,10 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
         );
 
         // Register the change in the resolver.
-        projectFor[handleOf[_projectId]] = 0;
+        idFor[handleOf[_projectId]] = 0;
 
         // Register the change in the resolver.
-        projectFor[_handle] = _projectId;
+        idFor[_handle] = _projectId;
 
         // Set the new handle.
         handleOf[_projectId] = _handle;
@@ -285,10 +282,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
     */
     function challengeHandle(bytes32 _handle) external override {
         // No need to challenge a handle that's not taken.
-        require(
-            projectFor[_handle] > 0,
-            "JBProjects::challenge: HANDLE_NOT_TAKEN"
-        );
+        require(idFor[_handle] > 0, "JBProjects::challenge: HANDLE_NOT_TAKEN");
 
         // No need to challenge again if a handle is already being challenged.
         require(

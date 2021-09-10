@@ -57,7 +57,7 @@ interface IJBProjects is IERC721 {
 
     function handleOf(uint256 _projectId) external returns (bytes32 handle);
 
-    function projectFor(bytes32 _handle) external returns (uint256 projectId);
+    function idFor(bytes32 _handle) external returns (uint256 projectId);
 
     function transferAddressFor(bytes32 _handle)
         external
