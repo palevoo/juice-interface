@@ -12,7 +12,6 @@ interface IJBProjects is IERC721 {
         address indexed owner,
         bytes32 indexed handle,
         string uri,
-        IJBTerminal terminal,
         address caller
     );
 
@@ -26,15 +25,15 @@ interface IJBProjects is IERC721 {
 
     event TransferHandle(
         uint256 indexed projectId,
-        address indexed to,
+        address indexed transferAddress,
         bytes32 indexed handle,
         bytes32 newHandle,
         address caller
     );
 
     event ClaimHandle(
-        address indexed account,
         uint256 indexed projectId,
+        address indexed transferAddress,
         bytes32 indexed handle,
         address caller
     );
@@ -70,8 +69,7 @@ interface IJBProjects is IERC721 {
     function createFor(
         address _owner,
         bytes32 _handle,
-        string calldata _uri,
-        IJBTerminal _jbTerminal
+        string calldata _uri
     ) external returns (uint256 id);
 
     function setHandleOf(uint256 _projectId, bytes32 _handle) external;
@@ -80,7 +78,7 @@ interface IJBProjects is IERC721 {
 
     function transferHandleOf(
         uint256 _projectId,
-        address _to,
+        address _transferAddress,
         bytes32 _newHandle
     ) external returns (bytes32 _handle);
 

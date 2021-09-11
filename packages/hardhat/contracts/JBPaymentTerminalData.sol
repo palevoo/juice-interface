@@ -326,6 +326,9 @@ contract JBPaymentTerminalData is
             paymentTerminal
         );
 
+        // Set the project's terminal to be this terminal.
+        directory.setTerminalOf(_projectId, paymentTerminal);
+
         _configure(
             _projectId,
             _properties,
@@ -409,6 +412,10 @@ contract JBPaymentTerminalData is
 
         // Configure the active project if its tokens have yet to be minted.
         bool _shouldConfigureActive = tokenStore.totalSupplyOf(_projectId) == 0;
+
+        // Set the project's terminal to be this terminal if it's not yet set.
+        if (directory.terminalOf(_projectId) == IJBTerminal(0))
+            directory.setTerminalOf(_projectId, paymentTerminal);
 
         return
             _configure(
@@ -1030,8 +1037,9 @@ contract JBPaymentTerminalData is
       Only the payment layer can record balance transfers.
 
       @param _projectId The ID of the project having its balance transfered.
+      @param _terminal The terminal that the balance is being transfered to.
     */
-    function recordBalanceTransferFor(uint256 _projectId)
+    function recordBalanceTransferFor(uint256 _projectId, IJBTerminal _terminal)
         external
         override
         onlyPaymentTerminal
@@ -1048,6 +1056,9 @@ contract JBPaymentTerminalData is
 
         // Set the balance to 0.
         balanceOf[_projectId] = 0;
+
+        // Switch the terminal that the directory will point to for this project.
+        directory.setTerminalOf(_projectId, _terminal);
     }
 
     /**

@@ -213,7 +213,7 @@ interface IJBPaymentTerminalData {
 
     function recordPrepForBalanceTransferOf(uint256 _projectId) external;
 
-    function recordBalanceTransferFor(uint256 _projectId)
+    function recordBalanceTransferFor(uint256 _projectId, IJBTerminal _terminal)
         external
         returns (uint256 balance);
 

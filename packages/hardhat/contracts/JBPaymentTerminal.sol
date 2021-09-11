@@ -407,10 +407,7 @@ contract JBPaymentTerminal is
         _terminal.prepForBalanceTransferOf(_projectId);
 
         // Record the balance transfer in the data layer.
-        uint256 _balance = data.recordBalanceTransferFor(_projectId);
-
-        // Switch the terminal that the terminal directory will point to for this project.
-        directory.setTerminalOf(_projectId, _terminal);
+        uint256 _balance = data.recordBalanceTransferFor(_projectId, _terminal);
 
         // Move the funds to the new contract if needed.
         if (_balance > 0)

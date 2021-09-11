@@ -3,11 +3,15 @@ pragma solidity 0.8.6;
 
 import "./../interfaces/IJBOperatable.sol";
 
+/** 
+  @notice
+  Modifiers to allow access to functions based on the message sender's operator status.
+*/
 abstract contract JBOperatable is IJBOperatable {
     modifier requirePermission(
         address _account,
         uint256 _domain,
-        uint256 _index
+        uint256 _permissionIndex
     ) {
         require(
             msg.sender == _account ||
@@ -15,7 +19,7 @@ abstract contract JBOperatable is IJBOperatable {
                     msg.sender,
                     _account,
                     _domain,
-                    _index
+                    _permissionIndex
                 ),
             "Operatable: UNAUTHORIZED"
         );
@@ -25,7 +29,7 @@ abstract contract JBOperatable is IJBOperatable {
     modifier requirePermissionAllowingWildcardDomain(
         address _account,
         uint256 _domain,
-        uint256 _index
+        uint256 _permissionIndex
     ) {
         require(
             msg.sender == _account ||
@@ -33,9 +37,14 @@ abstract contract JBOperatable is IJBOperatable {
                     msg.sender,
                     _account,
                     _domain,
-                    _index
+                    _permissionIndex
                 ) ||
-                operatorStore.hasPermission(msg.sender, _account, 0, _index),
+                operatorStore.hasPermission(
+                    msg.sender,
+                    _account,
+                    0,
+                    _permissionIndex
+                ),
             "Operatable: UNAUTHORIZED"
         );
         _;
@@ -44,7 +53,7 @@ abstract contract JBOperatable is IJBOperatable {
     modifier requirePermissionAcceptingAlternateAddress(
         address _account,
         uint256 _domain,
-        uint256 _index,
+        uint256 _permissionIndex,
         address _alternate
     ) {
         require(
@@ -53,7 +62,7 @@ abstract contract JBOperatable is IJBOperatable {
                     msg.sender,
                     _account,
                     _domain,
-                    _index
+                    _permissionIndex
                 ) ||
                 msg.sender == _alternate,
             "Operatable: UNAUTHORIZED"

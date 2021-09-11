@@ -53,15 +53,14 @@ contract JBDirectory is IJBDirectory, JBOperatable {
         IJBTerminal _currentTerminal = terminalOf[_projectId];
 
         // Either:
-        // - case 1: the current terminal hasn't been set yet and the msg sender is either the projects contract or the terminal being set.
-        // - case 2: the current terminal must not yet be set, or the current terminal is setting a new terminal.
+        // - case 1: the current terminal hasn't been set yet and the msg sender is the terminal being set's data authority.
+        // - case 2: the current terminal's data authority is setting a new terminal.
         require(
             // case 1.
             (_currentTerminal == IJBTerminal(address(0)) &&
-                (msg.sender == address(projects) ||
-                    msg.sender == address(_terminal))) ||
+                msg.sender == address(_terminal.dataAuthority())) ||
                 // case 2.
-                msg.sender == address(_currentTerminal),
+                msg.sender == address(_currentTerminal.dataAuthority()),
             "JBDirectory::setTerminal: UNAUTHORIZED"
         );
 
