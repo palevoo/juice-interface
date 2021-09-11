@@ -319,15 +319,7 @@ contract JBPaymentTerminalData is
 
         // Create the project for the owner. This this contract as the project's terminal,
         // which will give it exclusive access to manage the project's funding cycles and tokens.
-        uint256 _projectId = projects.createFor(
-            _owner,
-            _handle,
-            _uri,
-            paymentTerminal
-        );
-
-        // Set the project's terminal to be this terminal.
-        directory.setTerminalOf(_projectId, paymentTerminal);
+        uint256 _projectId = projects.createFor(_owner, _handle, _uri);
 
         _configure(
             _projectId,
@@ -412,10 +404,6 @@ contract JBPaymentTerminalData is
 
         // Configure the active project if its tokens have yet to be minted.
         bool _shouldConfigureActive = tokenStore.totalSupplyOf(_projectId) == 0;
-
-        // Set the project's terminal to be this terminal if it's not yet set.
-        if (directory.terminalOf(_projectId) == IJBTerminal(0))
-            directory.setTerminalOf(_projectId, paymentTerminal);
 
         return
             _configure(
@@ -1508,6 +1496,10 @@ contract JBPaymentTerminalData is
                 msg.sender
             );
         }
+
+        // Set the project's terminal to be this terminal if it's not yet set.
+        if (directory.terminalOf(_projectId) == IJBTerminal(address(0)))
+            directory.setTerminalOf(_projectId, paymentTerminal);
 
         return _fundingCycle.id;
     }

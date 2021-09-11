@@ -326,12 +326,12 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
 
     /** 
       @notice
-      Allows a project to renew its handle so it can't be claimed until a year after its challenged again.
+      Allows a project to renew its handle, which cancels any pending challenges.
 
       @dev 
       Only a project's owner or operator can renew its handle.
 
-      @param _projectId The ID of the project that current has the handle being renewed.
+      @param _projectId The ID of the project to which the handle being renewed belongs. 
     */
     function renewHandleOf(uint256 _projectId)
         external
