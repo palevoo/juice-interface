@@ -119,7 +119,6 @@ interface IJBPaymentTerminalData {
         returns (uint256);
 
     function launchProjectFor(
-        address _owner,
         bytes32 _handle,
         string calldata _uri,
         FundingCycleProperties calldata _properties,
