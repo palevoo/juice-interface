@@ -5,11 +5,11 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./IJBProjects.sol";
 import "./IJBDirectory.sol";
-import "./IJBPaymentTerminalData.sol";
+import "./IJBETHPaymentTerminalData.sol";
 import "./IJBSplitsStore.sol";
 import "./IJBFundingCycleStore.sol";
 
-interface IJBPaymentTerminal {
+interface IJBETHPaymentTerminal {
     event AddToBalance(
         uint256 indexed projectId,
         uint256 value,
@@ -80,7 +80,7 @@ interface IJBPaymentTerminal {
 
     function splitsStore() external view returns (IJBSplitsStore);
 
-    function data() external view returns (IJBPaymentTerminalData);
+    function data() external view returns (IJBETHPaymentTerminalData);
 
     function balanceTransferIsAllowedTo(IJBTerminal _terminal)
         external

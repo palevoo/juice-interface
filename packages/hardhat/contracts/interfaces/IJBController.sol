@@ -9,7 +9,6 @@ import "./IJBProjects.sol";
 import "./IJBSplitsStore.sol";
 import "./IJBTerminal.sol";
 import "./IOperatorStore.sol";
-import "./IJBPaymentTerminal.sol";
 import "./IJBFundingCycleDataSource.sol";
 import "./IJBPrices.sol";
 
@@ -27,11 +26,16 @@ struct FundingCycleMetadata {
     IJBFundingCycleDataSource dataSource;
 }
 
+struct OverflowAllowance {
+    IJBTerminal terminal;
+    uint256 amount;
+}
+
 interface IJBController {
     event SetOverflowAllowance(
         uint256 indexed projectId,
         uint256 indexed configuration,
-        uint256 amount,
+        OverflowAllowance allowance,
         address caller
     );
     event DistributeReservedTokens(
@@ -84,17 +88,18 @@ interface IJBController {
         view
         returns (uint256);
 
-    function overflowAllowanceOf(uint256 _projectId, uint256 _configuration)
-        external
-        view
-        returns (uint256);
+    function overflowAllowanceOf(
+        uint256 _projectId,
+        uint256 _configuration,
+        IJBTerminal _terminal
+    ) external view returns (uint256);
 
     function launchProjectFor(
         bytes32 _handle,
         string calldata _uri,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata calldata _metadata,
-        uint256 _overflowAllowance,
+        OverflowAllowance[] memory _overflowAllowance,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
     ) external;
@@ -103,7 +108,7 @@ interface IJBController {
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata calldata _metadata,
-        uint256 _overflowAllowance,
+        OverflowAllowance[] memory _overflowAllowance,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
     ) external returns (uint256);

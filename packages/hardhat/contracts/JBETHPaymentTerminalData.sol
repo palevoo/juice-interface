@@ -9,7 +9,7 @@ import "./libraries/Operations2.sol";
 import "./libraries/FundingCycleMetadataResolver.sol";
 
 // Inheritance
-import "./interfaces/IJBPaymentTerminalData.sol";
+import "./interfaces/IJBETHPaymentTerminalData.sol";
 import "./abstract/JBOperatable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -29,13 +29,13 @@ import "./JBController.sol";
   
   Inherits from:
 
-  IJBPaymentTerminalData - general interface for the methods in this contract that change the blockchain's state according to the Juicebox protocol's rules.
+  IJBETHPaymentTerminalData - general interface for the methods in this contract that change the blockchain's state according to the Juicebox protocol's rules.
   JBOperatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
   Ownable - the owner of this contract can specify its payment layer contract, and add new ITerminals to an allow list that projects currently using this terminal can migrate to.
   ReentrencyGuard - several function in this contract shouldn't be accessible recursively.
 */
-contract JBPaymentTerminalData is
-    IJBPaymentTerminalData,
+contract JBETHPaymentTerminalData is
+    IJBETHPaymentTerminalData,
     JBOperatable,
     Ownable,
     ReentrancyGuard
@@ -47,7 +47,7 @@ contract JBPaymentTerminalData is
     modifier onlyPaymentTerminal() {
         require(
             msg.sender == address(paymentTerminal),
-            "JBPaymentTerminalData: UNAUTHORIZED"
+            "JBETHPaymentTerminalData: UNAUTHORIZED"
         );
         _;
     }
@@ -260,13 +260,13 @@ contract JBPaymentTerminalData is
         // The project must have a funding cycle configured.
         require(
             fundingCycle.number > 0,
-            "JBPaymentTerminalData::recordPaymentFrom: NOT_FOUND"
+            "JBETHPaymentTerminalData::recordPaymentFrom: NOT_FOUND"
         );
 
         // Must not be paused.
         require(
             !fundingCycle.payPaused(),
-            "JBPaymentTerminalData::recordPaymentFrom: PAUSED"
+            "JBETHPaymentTerminalData::recordPaymentFrom: PAUSED"
         );
 
         // Save a reference to the delegate to use.
@@ -311,7 +311,7 @@ contract JBPaymentTerminalData is
             // The token count must be greater than or equal to the minimum expected.
             require(
                 tokenCount >= _minReturnedTokens,
-                "JBPaymentTerminalData::recordPaymentFrom: INADEQUATE"
+                "JBETHPaymentTerminalData::recordPaymentFrom: INADEQUATE"
             );
 
             // Add the amount to the balance of the project.
@@ -382,19 +382,19 @@ contract JBPaymentTerminalData is
         // Funds cannot be withdrawn if there's no funding cycle.
         require(
             fundingCycle.id > 0,
-            "JBPaymentTerminalData::recordWithdrawalFor: NOT_FOUND"
+            "JBETHPaymentTerminalData::recordWithdrawalFor: NOT_FOUND"
         );
 
         // The funding cycle must not be paused.
         require(
             !fundingCycle.tapPaused(),
-            "JBPaymentTerminalData::recordWithdrawalFor: PAUSED"
+            "JBETHPaymentTerminalData::recordWithdrawalFor: PAUSED"
         );
 
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "JBPaymentTerminalData::recordWithdrawalFor: UNEXPECTED_CURRENCY"
+            "JBETHPaymentTerminalData::recordWithdrawalFor: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -406,13 +406,13 @@ contract JBPaymentTerminalData is
         // The amount being withdrawn must be at least as much as was expected.
         require(
             _minReturnedWei <= withdrawnAmount,
-            "JBPaymentTerminalData::recordWithdrawalFor: INADEQUATE"
+            "JBETHPaymentTerminalData::recordWithdrawalFor: INADEQUATE"
         );
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "JBPaymentTerminalData::recordWithdrawalFor: INSUFFICIENT_FUNDS"
+            "JBETHPaymentTerminalData::recordWithdrawalFor: INSUFFICIENT_FUNDS"
         );
 
         // Removed the withdrawn funds from the project's balance.
@@ -449,7 +449,7 @@ contract JBPaymentTerminalData is
         // Make sure the currencies match.
         require(
             _currency == fundingCycle.currency,
-            "JBPaymentTerminalData::recordUsedAllowanceOf: UNEXPECTED_CURRENCY"
+            "JBETHPaymentTerminalData::recordUsedAllowanceOf: UNEXPECTED_CURRENCY"
         );
 
         // Convert the amount to wei.
@@ -461,23 +461,27 @@ contract JBPaymentTerminalData is
         // There must be sufficient allowance available.
         require(
             withdrawnAmount <=
-                jb.overflowAllowanceOf(_projectId, fundingCycle.configured) -
+                jb.overflowAllowanceOf(
+                    _projectId,
+                    fundingCycle.configured,
+                    paymentTerminal
+                ) -
                     usedOverflowAllowanceOf[_projectId][
                         fundingCycle.configured
                     ],
-            "JBPaymentTerminalData::recordUsedAllowanceOf: NOT_ALLOWED"
+            "JBETHPaymentTerminalData::recordUsedAllowanceOf: NOT_ALLOWED"
         );
 
         // The amount being withdrawn must be at least as much as was expected.
         require(
             _minReturnedWei <= withdrawnAmount,
-            "JBPaymentTerminalData::recordUsedAllowanceOf: INADEQUATE"
+            "JBETHPaymentTerminalData::recordUsedAllowanceOf: INADEQUATE"
         );
 
         // The amount being withdrawn must be available.
         require(
             withdrawnAmount <= balanceOf[_projectId],
-            "JBPaymentTerminalData::recordUsedAllowanceOf: INSUFFICIENT_FUNDS"
+            "JBETHPaymentTerminalData::recordUsedAllowanceOf: INSUFFICIENT_FUNDS"
         );
 
         // Store the decremented value.
@@ -529,7 +533,7 @@ contract JBPaymentTerminalData is
         // The holder must have the specified number of the project's tokens.
         require(
             tokenStore.balanceOf(_holder, _projectId) >= _tokenCount,
-            "JBPaymentTerminalData::recordRedemptionFor: INSUFFICIENT_TOKENS"
+            "JBETHPaymentTerminalData::recordRedemptionFor: INSUFFICIENT_TOKENS"
         );
 
         // Get a reference to the project's current funding cycle.
@@ -538,7 +542,7 @@ contract JBPaymentTerminalData is
         // The current funding cycle must not be paused.
         require(
             !fundingCycle.redeemPaused(),
-            "JBPaymentTerminalData::recordRedemptionFor: PAUSED"
+            "JBETHPaymentTerminalData::recordRedemptionFor: PAUSED"
         );
 
         // Save a reference to the delegate to use.
@@ -568,13 +572,13 @@ contract JBPaymentTerminalData is
         // The amount being claimed must be at least as much as was expected.
         require(
             claimAmount >= _minReturnedWei,
-            "JBPaymentTerminalData::recordRedemptionFor: INADEQUATE"
+            "JBETHPaymentTerminalData::recordRedemptionFor: INADEQUATE"
         );
 
         // The amount being claimed must be within the project's balance.
         require(
             claimAmount <= balanceOf[_projectId],
-            "JBPaymentTerminalData::recordRedemptionFor: INSUFFICIENT_FUNDS"
+            "JBETHPaymentTerminalData::recordRedemptionFor: INSUFFICIENT_FUNDS"
         );
 
         // Redeem the tokens, which burns them.

@@ -9,7 +9,7 @@ import "./libraries/Operations2.sol";
 import "./libraries/SplitsGroups.sol";
 
 // Inheritance
-import "./interfaces/IJBPaymentTerminal.sol";
+import "./interfaces/IJBETHPaymentTerminal.sol";
 import "./interfaces/IJBTerminal.sol";
 import "./abstract/JBOperatable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -28,8 +28,8 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
   JBOperatable - several functions in this contract can only be accessed by a project owner, or an address that has been preconfifigured to be an operator of the project.
   ReentrencyGuard - several function in this contract shouldn't be accessible recursively.
 */
-contract JBPaymentTerminal is
-    IJBPaymentTerminal,
+contract JBETHPaymentTerminal is
+    IJBETHPaymentTerminal,
     IJBTerminal,
     JBOperatable,
     Ownable,
@@ -61,7 +61,7 @@ contract JBPaymentTerminal is
       @notice
       The contract that stiches together funding cycles and treasury tokens.
     */
-    IJBPaymentTerminalData public immutable override data;
+    IJBETHPaymentTerminalData public immutable override data;
 
     // Whether or not a particular contract is available for projects to transfer their balance to.
     mapping(IJBTerminal => bool) public override balanceTransferIsAllowedTo;
@@ -96,7 +96,7 @@ contract JBPaymentTerminal is
         IJBProjects _projects,
         IJBSplitsStore _splitsStore,
         IJBDirectory _directory,
-        IJBPaymentTerminalData _data
+        IJBETHPaymentTerminalData _data
     ) JBOperatable(_operatorStore) {
         projects = _projects;
         splitsStore = _splitsStore;

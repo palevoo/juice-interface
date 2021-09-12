@@ -64,14 +64,15 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
       The amount of overflow that a project is allowed to tap into on-demand.
 
       @dev
-      [_projectId][_configuration]
+      [_projectId][_configuration][_terminal]
 
       _projectId The ID of the project to get the current overflow allowance of.
       _configuration The configuration of the during which the allowance applies.
+      _terminal The terminal managing the overflow.
 
       @return The current overflow allowance for the specified project configuration. Decreases as projects use of the allowance.
     */
-    mapping(uint256 => mapping(uint256 => uint256))
+    mapping(uint256 => mapping(uint256 => mapping(IJBTerminal => uint256)))
         public
         override overflowAllowanceOf;
 
@@ -179,7 +180,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IJBFundingCycleDataSource.
-      @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
+      @param _overflowAllowances The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
       @param _payoutSplits Any payout splits to set.
       @param _reservedTokenSplits Any reserved token splits to set.
     */
@@ -188,7 +189,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         string calldata _uri,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata calldata _metadata,
-        uint256 _overflowAllowance,
+        OverflowAllowance[] memory _overflowAllowances,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
     ) external override {
@@ -205,7 +206,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
             _projectId,
             _properties,
             _packedMetadata,
-            _overflowAllowance,
+            _overflowAllowances,
             _payoutSplits,
             _reservedTokenSplits,
             true
@@ -247,7 +248,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         @dev _metadata.useDataSourceForPay Whether or not the data source should be used when processing a payment.
         @dev _metadata.useDataSourceForRedeem Whether or not the data source should be used when processing a redemption.
         @dev _metadata.dataSource A contract that exposes data that can be used within pay and redeem transactions. Must adhere to IJBFundingCycleDataSource.
-      @param _overflowAllowance The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
+      @param _overflowAllowances The amount, in wei (18 decimals), of ETH that a project can use from its own overflow on-demand.
       @param _payoutSplits Any payout splits to set.
       @param _reservedTokenSplits Any reserved token splits to set.
 
@@ -257,7 +258,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         FundingCycleMetadata calldata _metadata,
-        uint256 _overflowAllowance,
+        OverflowAllowance[] memory _overflowAllowances,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
     )
@@ -290,7 +291,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
                 _projectId,
                 _properties,
                 _packedMetadata,
-                _overflowAllowance,
+                _overflowAllowances,
                 _payoutSplits,
                 _reservedTokenSplits,
                 _shouldConfigureActive
@@ -339,11 +340,14 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         // Can't send to the zero address.
         require(
             _beneficiary != address(0),
-            "JBPaymentTerminalData::mintTokensOf: ZERO_ADDRESS"
+            "JBETHPaymentTerminalData::mintTokensOf: ZERO_ADDRESS"
         );
 
         // There should be tokens to mint.
-        require(_tokenCount > 0, "JBPaymentTerminalData::mintTokensOf: NO_OP");
+        require(
+            _tokenCount > 0,
+            "JBETHPaymentTerminalData::mintTokensOf: NO_OP"
+        );
 
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
@@ -353,7 +357,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         // The current funding cycle must not be paused.
         require(
             _fundingCycle.mintPaused(),
-            "JBPaymentTerminalData::mintTokensOf: PAUSED"
+            "JBETHPaymentTerminalData::mintTokensOf: PAUSED"
         );
 
         if (_shouldReserveTokens && _fundingCycle.reservedRate() == 200) {
@@ -418,7 +422,10 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         )
     {
         // There should be tokens to burn
-        require(_tokenCount > 0, "JBPaymentTerminalData::burnTokensOf: NO_OP");
+        require(
+            _tokenCount > 0,
+            "JBETHPaymentTerminalData::burnTokensOf: NO_OP"
+        );
 
         // Get a reference to the project's current funding cycle.
         FundingCycle memory _fundingCycle = fundingCycleStore.currentOf(
@@ -428,7 +435,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         // The current funding cycle must not be paused.
         require(
             _fundingCycle.burnPaused(),
-            "JBPaymentTerminalData::burnTokensOf: PAUSED"
+            "JBETHPaymentTerminalData::burnTokensOf: PAUSED"
         );
 
         // Update the token tracker so that reserved tokens will still be correctly mintable.
@@ -481,19 +488,19 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         // The reserved project token rate must be less than or equal to 200.
         require(
             _metadata.reservedRate <= 200,
-            "JBPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_RESERVED_RATE"
+            "JBETHPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_RESERVED_RATE"
         );
 
         // The redemption rate must be between 0 and 200.
         require(
             _metadata.redemptionRate <= 200,
-            "JBPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_REDEMPTION_RATE"
+            "JBETHPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_REDEMPTION_RATE"
         );
 
         // The ballot redemption rate must be less than or equal to 200.
         require(
             _metadata.ballotRedemptionRate <= 200,
-            "JBPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_BALLOT_REDEMPTION_RATE"
+            "JBETHPaymentTerminalData::_validateAndPackFundingCycleMetadata: BAD_BALLOT_REDEMPTION_RATE"
         );
 
         // version 1 in the first 8 bytes.
@@ -719,7 +726,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
         uint256 _packedMetadata,
-        uint256 _overflowAllowance,
+        OverflowAllowance[] memory _overflowAllowances,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits,
         bool _shouldConfigureActive
@@ -751,21 +758,27 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
                 _reservedTokenSplits
             );
 
-        // Set the overflow allowance if the value is different from the currently set value.
-        if (
-            _overflowAllowance !=
-            overflowAllowanceOf[_projectId][_fundingCycle.configured]
-        ) {
-            overflowAllowanceOf[_projectId][
-                _fundingCycle.configured
-            ] = _overflowAllowance;
+        for (uint256 _i; _i < _overflowAllowances.length; _i++) {
+            OverflowAllowance memory _allowance = _overflowAllowances[_i];
 
-            emit SetOverflowAllowance(
-                _projectId,
-                _fundingCycle.configured,
-                _overflowAllowance,
-                msg.sender
-            );
+            // Set the overflow allowance if the value is different from the currently set value.
+            if (
+                _allowance.amount !=
+                overflowAllowanceOf[_projectId][_fundingCycle.configured][
+                    _allowance.terminal
+                ]
+            ) {
+                overflowAllowanceOf[_projectId][_fundingCycle.configured][
+                    _allowance.terminal
+                ] = _allowance.amount;
+
+                emit SetOverflowAllowance(
+                    _projectId,
+                    _fundingCycle.configured,
+                    _allowance,
+                    msg.sender
+                );
+            }
         }
 
         // // Set the project's terminal to be this terminal if it's not yet set.

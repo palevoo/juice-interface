@@ -9,12 +9,11 @@ import "./IJBProjects.sol";
 import "./IJBSplitsStore.sol";
 import "./IJBTerminal.sol";
 import "./IOperatorStore.sol";
-import "./IJBPaymentTerminal.sol";
 import "./IJBFundingCycleDataSource.sol";
 import "./IJBPrices.sol";
 import "./IJBController.sol";
 
-interface IJBPaymentTerminalData {
+interface IJBETHPaymentTerminalData {
     event SetOverflowAllowance(
         uint256 indexed projectId,
         uint256 indexed configuration,
