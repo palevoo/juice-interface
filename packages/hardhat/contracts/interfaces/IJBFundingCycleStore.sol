@@ -3,6 +3,10 @@ pragma solidity 0.8.6;
 
 import "./IFundingCycleBallot.sol";
 
+// struct Targets {
+//   uint256 amount;
+// }
+
 /// @notice The funding cycle structure represents a project stewarded by an address, and accounts for which addresses have helped sustain the project.
 struct FundingCycle {
     // A unique number that's incremented for each new funding cycle, starting with 1.

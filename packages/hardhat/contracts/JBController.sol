@@ -187,7 +187,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         bytes32 _handle,
         string calldata _uri,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadataV2 calldata _metadata,
+        FundingCycleMetadata calldata _metadata,
         uint256 _overflowAllowance,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
@@ -256,7 +256,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
     function reconfigureFundingCyclesOf(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadataV2 calldata _metadata,
+        FundingCycleMetadata calldata _metadata,
         uint256 _overflowAllowance,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
@@ -476,7 +476,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
       @return packed The packed uint256 of all metadata params. The first 8 bytes specify the version.
      */
     function _validateAndPackFundingCycleMetadata(
-        FundingCycleMetadataV2 memory _metadata
+        FundingCycleMetadata memory _metadata
     ) private pure returns (uint256 packed) {
         // The reserved project token rate must be less than or equal to 200.
         require(

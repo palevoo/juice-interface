@@ -13,7 +13,7 @@ import "./IJBPaymentTerminal.sol";
 import "./IJBFundingCycleDataSource.sol";
 import "./IJBPrices.sol";
 
-struct FundingCycleMetadataV2 {
+struct FundingCycleMetadata {
     uint256 reservedRate;
     uint256 redemptionRate;
     uint256 ballotRedemptionRate;
@@ -93,7 +93,7 @@ interface IJBController {
         bytes32 _handle,
         string calldata _uri,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadataV2 calldata _metadata,
+        FundingCycleMetadata calldata _metadata,
         uint256 _overflowAllowance,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
@@ -102,7 +102,7 @@ interface IJBController {
     function reconfigureFundingCyclesOf(
         uint256 _projectId,
         FundingCycleProperties calldata _properties,
-        FundingCycleMetadataV2 calldata _metadata,
+        FundingCycleMetadata calldata _metadata,
         uint256 _overflowAllowance,
         Split[] memory _payoutSplits,
         Split[] memory _reservedTokenSplits
