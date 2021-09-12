@@ -484,7 +484,6 @@ contract JBPaymentTerminal is
             directory.terminalOf(_projectId) != this,
             "JBPaymentTerminal::prepForBalanceTransferOf: NOT_ALLOWED"
         );
-        data.recordPrepForBalanceTransferOf(_projectId);
     }
 
     //*********************************************************************//

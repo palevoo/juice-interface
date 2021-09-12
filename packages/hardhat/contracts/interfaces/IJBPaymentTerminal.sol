@@ -7,6 +7,7 @@ import "./IJBProjects.sol";
 import "./IJBDirectory.sol";
 import "./IJBPaymentTerminalData.sol";
 import "./IJBSplitsStore.sol";
+import "./IJBFundingCycleStore.sol";
 
 interface IJBPaymentTerminal {
     event AddToBalance(
