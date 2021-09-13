@@ -18,27 +18,58 @@ import "./libraries/JBOperations.sol";
 contract JBProjects is ERC721, IJBProjects, JBOperatable {
     // --- private stored properties --- //
 
-    // The number of seconds in a day.
+    // The number of seconds in 365 days.
     uint256 private constant _SECONDS_IN_YEAR = 31536000;
 
     // --- public stored properties --- //
 
-    /// @notice A running count of project IDs.
+    /** 
+      @notice 
+      The number of projects that have been created using this contract.
+
+      @dev
+      The count is incremented with each new project created. 
+      The resulting ERC-721 token ID for each project is the newly incremented count value.
+    */
     uint256 public override count = 0;
 
-    /// @notice Optional mapping for project URIs
+    /** 
+      @notice 
+      The IPFS CID for each project, which can be used to reference the project's metadata.
+
+      @dev
+      This is optional for each project.
+    */
     mapping(uint256 => string) public override uriOf;
 
-    /// @notice Each project's handle.
+    /** 
+      @notice 
+      The unique handle for each project.
+
+      @dev
+      Each project must have a handle.
+    */
     mapping(uint256 => bytes32) public override handleOf;
 
-    /// @notice The ID that each unique handle represents.
+    /** 
+      @notice 
+      The ID of the project that each unique handle is currently referencing.
+    */
     mapping(bytes32 => uint256) public override idFor;
 
-    /// @notice Handles that have been transfered to the specified address.
+    /** 
+      @notice 
+      The address that can reallocate a handle that have been transferred to it.
+    */
     mapping(bytes32 => address) public override transferAddressFor;
 
-    /// @notice The timestamps when each handle is claimable. A value of 0 means a handle isn't being challenged.
+    /** 
+      @notice 
+      The timestamps after which each handle can be openly claimed. 
+
+      @dev
+      A value of 0 means a handle isn't yet being challenged.
+    */
     mapping(bytes32 => uint256) public override challengeExpiryOf;
 
     // --- external views --- //
@@ -303,9 +334,12 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
       @param _handle The handle to challenge.
     */
     function challengeHandle(bytes32 _handle) external override {
+        // Get a reference to the ID of the project to which the handle belongs.
+        uint256 _projectId = idFor[_handle];
+
         // No need to challenge a handle that's not taken.
         require(
-            idFor[_handle] > 0,
+            _projectId > 0,
             "JBProjects::challengeHandle: HANDLE_NOT_TAKEN"
         );
 
@@ -321,7 +355,7 @@ contract JBProjects is ERC721, IJBProjects, JBOperatable {
         // Store the challenge expiry for the handle.
         challengeExpiryOf[_handle] = _challengeExpiry;
 
-        emit ChallengeHandle(_handle, _challengeExpiry, msg.sender);
+        emit ChallengeHandle(_handle, _projectId, _challengeExpiry, msg.sender);
     }
 
     /** 

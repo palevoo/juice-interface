@@ -40,6 +40,7 @@ interface IJBProjects is IERC721 {
 
     event ChallengeHandle(
         bytes32 indexed handle,
+        uint256 indexed projectId,
         uint256 challengeExpiry,
         address caller
     );

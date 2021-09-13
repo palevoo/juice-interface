@@ -482,7 +482,7 @@ contract JBETHPaymentTerminal is
       @param _projectId The ID of the project being migrated.
       @param _terminal The terminal contract that will gain the project's funds.
     */
-    function transferBalanceOf(uint256 _projectId, IJBTerminal _terminal)
+    function migrate(uint256 _projectId, IJBTerminal _terminal)
         external
         override
         nonReentrant
@@ -495,11 +495,11 @@ contract JBETHPaymentTerminal is
         // The data layer must be the project's current terminal.
         require(
             directory.terminalOf(_projectId) == this,
-            "JBPaymentTerminal::transferBalanceOf: UNAUTHORIZED"
+            "JBPaymentTerminal::migrate: UNAUTHORIZED"
         );
 
         // Record the balance transfer in the data layer.
-        uint256 _balance = _recordBalanceTransferFor(_projectId, _terminal);
+        uint256 _balance = _recordMigrationFor(_projectId, _terminal);
 
         // Move the funds to the new contract if needed.
         if (_balance > 0)
@@ -744,9 +744,6 @@ contract JBETHPaymentTerminal is
       @dev
       The msg.value is the amount of the contribution in wei.
 
-      @dev
-      Only the payment layer can record a payment.
-
       @param _payer The original address that sent the payment to the payment layer.
       @param _amount The amount that is being paid.
       @param _projectId The ID of the project being contribute to.
@@ -822,38 +819,34 @@ contract JBETHPaymentTerminal is
             memo = _memo;
         }
 
-        // Scope to avoid stack too deep errors.
-        // Inspired by uniswap https://github.com/Uniswap/uniswap-v2-periphery/blob/69617118cda519dab608898d62aaa79877a61004/contracts/UniswapV2Router02.sol#L327-L333.
-        {
-            // Multiply the amount by the weight to determine the amount of tokens to mint.
-            uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, weight);
+        // Multiply the amount by the weight to determine the amount of tokens to mint.
+        uint256 _weightedAmount = PRBMathUD60x18.mul(_amount, weight);
 
-            // Only print the tokens that are unreserved.
-            tokenCount = PRBMath.mulDiv(
-                _weightedAmount,
-                200 - fundingCycle.reservedRate(),
-                200
+        // Only print the tokens that are unreserved.
+        tokenCount = PRBMath.mulDiv(
+            _weightedAmount,
+            200 - fundingCycle.reservedRate(),
+            200
+        );
+
+        // The token count must be greater than or equal to the minimum expected.
+        require(
+            tokenCount >= _minReturnedTokens,
+            "JBETHPaymentTerminalData::recordPaymentFrom: INADEQUATE"
+        );
+
+        // Add the amount to the balance of the project.
+        balanceOf[_projectId] = balanceOf[_projectId] + _amount;
+
+        if (_weightedAmount > 0)
+            jb.mintTokensOf(
+                _projectId,
+                tokenCount,
+                address(uint160(_preferUnstakedTokensAndBeneficiary >> 1)),
+                "ETH received",
+                (_preferUnstakedTokensAndBeneficiary & 1) == 0,
+                true
             );
-
-            // The token count must be greater than or equal to the minimum expected.
-            require(
-                tokenCount >= _minReturnedTokens,
-                "JBETHPaymentTerminalData::recordPaymentFrom: INADEQUATE"
-            );
-
-            // Add the amount to the balance of the project.
-            balanceOf[_projectId] = balanceOf[_projectId] + _amount;
-
-            if (_weightedAmount > 0)
-                jb.mintTokensOf(
-                    _projectId,
-                    tokenCount,
-                    address(uint160(_preferUnstakedTokensAndBeneficiary >> 1)),
-                    "ETH received",
-                    (_preferUnstakedTokensAndBeneficiary & 1) == 0,
-                    true
-                );
-        }
 
         // If a delegate was returned by the data source, issue a callback to it.
         if (_delegate != IJBPayDelegate(address(0))) {
@@ -877,9 +870,6 @@ contract JBETHPaymentTerminal is
     /**
       @notice
       Records newly withdrawn funds for a project made at the payment layer.
-
-      @dev
-      Only the payment layer can record a withdrawal.
 
       @param _projectId The ID of the project that is having funds withdrawn.
       @param _amount The amount being withdrawn. Send as wei (18 decimals).
@@ -944,9 +934,6 @@ contract JBETHPaymentTerminal is
     /** 
       @notice 
       Records newly used allowance funds of a project made at the payment layer.
-
-      @dev
-      Only the payment layer can record used allowance.
 
       @param _projectId The ID of the project to use the allowance of.
       @param _amount The amount of the allowance to use.
@@ -1016,9 +1003,6 @@ contract JBETHPaymentTerminal is
     /**
       @notice
       Records newly redeemed tokens of a project made at the payment layer.
-
-      @dev
-      Only the payment layer can record redemptions.
 
       @param _holder The account that is having its tokens redeemed.
       @param _projectId The ID of the project to which the tokens being redeemed belong.
@@ -1132,16 +1116,13 @@ contract JBETHPaymentTerminal is
       @notice
       Allows a project owner to transfer its balance and treasury operations to a new contract.
 
-      @dev
-      Only the payment layer can record balance transfers.
-
-      @param _projectId The ID of the project having its balance transfered.
-      @param _terminal The terminal that the balance is being transfered to.
+      @param _projectId The ID of the project that is being migrated.
+      @param _terminal The terminal that the project is migrating to.
     */
-    function _recordBalanceTransferFor(
-        uint256 _projectId,
-        IJBTerminal _terminal
-    ) private returns (uint256 balance) {
+    function _recordMigrationFor(uint256 _projectId, IJBTerminal _terminal)
+        private
+        returns (uint256 balance)
+    {
         // Get a reference to the project's currently recorded balance.
         balance = balanceOf[_projectId];
 
@@ -1150,6 +1131,8 @@ contract JBETHPaymentTerminal is
 
         // Switch the terminal that the directory will point to for this project.
         directory.setTerminalOf(_projectId, _terminal);
+
+        jb.swapTerminal(_terminal);
     }
 
     /**

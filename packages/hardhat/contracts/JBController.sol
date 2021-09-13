@@ -482,6 +482,15 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         return _distributeReservedTokensOf(_projectId, _memo);
     }
 
+    function swapTerminal(IJBTerminal _terminal)
+        external
+        override
+        nonReentrant
+    {
+        /// move overflow allowance from msg.sender to _terminal;
+        ///
+    }
+
     //*********************************************************************//
     // --------------------- private helper functions -------------------- //
     //*********************************************************************//

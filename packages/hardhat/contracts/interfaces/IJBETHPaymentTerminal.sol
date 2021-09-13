@@ -143,5 +143,5 @@ interface IJBETHPaymentTerminal {
         address payable _beneficiary
     ) external returns (uint256 fundingCycleNumber);
 
-    function transferBalanceOf(uint256 _projectId, IJBTerminal _to) external;
+    function migrate(uint256 _projectId, IJBTerminal _to) external;
 }

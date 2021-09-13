@@ -140,4 +140,6 @@ interface IJBController {
     function distributeReservedTokensOf(uint256 _projectId, string memory _memo)
         external
         returns (uint256 amount);
+
+    function swapTerminal(IJBTerminal _terminal) external;
 }

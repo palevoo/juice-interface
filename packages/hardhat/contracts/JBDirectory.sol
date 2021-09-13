@@ -26,6 +26,9 @@ contract JBDirectory is IJBDirectory, JBOperatable {
     /// @notice For each project ID, the juicebox terminal that the direct payment addresses are proxies for.
     mapping(uint256 => IJBTerminal) public override terminalOf;
 
+    /// @notice For each project ID, the juicebox terminal that the direct payment addresses are proxies for.
+    mapping(uint256 => IJBTerminal[]) public terminalsOf;
+
     // --- external transactions --- //
 
     /** 
@@ -83,5 +86,22 @@ contract JBDirectory is IJBDirectory, JBOperatable {
         terminalOf[_projectId] = _terminal;
 
         emit SetTerminal(_projectId, _terminal, msg.sender);
+    }
+
+    function addTerminalFor(uint256 _projectId, IJBTerminal _terminal)
+        external
+    {
+        // 1. make sure the terminal has been allowed.
+        // 2. make sure the msg.sender is either the project owner.
+        // 3. add the terminal to the list of terminals.
+    }
+
+    function transferTerminalFor(uint256 _projectId, IJBTerminal _terminal)
+        external
+    {
+        // 1. make sure the terminal has been allowed.
+        // 2. make sure the msg.sender is a current terminal.
+        // 3. add the terminal to the list of terminals.
+        // 4. remove the calling terminal from the list of terminals.
     }
 }
