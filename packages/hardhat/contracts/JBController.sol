@@ -55,6 +55,12 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
     */
     IJBSplitsStore public immutable override splitsStore;
 
+    /** 
+      @notice
+      The directory of terminals.
+    */
+    IJBDirectory public immutable override directory;
+
     //*********************************************************************//
     // --------------------- public stored properties -------------------- //
     //*********************************************************************//
@@ -122,18 +128,21 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
       @param _fundingCycleStore The contract storing all funding cycle configurations.
       @param _tokenStore The contract that manages token minting and burning.
       @param _splitsStore The contract that stores splits for each project.
+      @param _directory The directory of terminals.
     */
     constructor(
         IJBOperatorStore _operatorStore,
         IJBProjects _projects,
         IJBFundingCycleStore _fundingCycleStore,
         IJBTokenStore _tokenStore,
-        IJBSplitsStore _splitsStore
+        IJBSplitsStore _splitsStore,
+        IJBDirectory _directory
     ) JBOperatable(_operatorStore) {
         projects = _projects;
         fundingCycleStore = _fundingCycleStore;
         tokenStore = _tokenStore;
         splitsStore = _splitsStore;
+        directory = _directory;
     }
 
     //*********************************************************************//
@@ -191,7 +200,8 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         FundingCycleMetadata calldata _metadata,
         OverflowAllowance[] memory _overflowAllowances,
         Split[] memory _payoutSplits,
-        Split[] memory _reservedTokenSplits
+        Split[] memory _reservedTokenSplits,
+        IJBTerminal _terminal
     ) external override {
         // Make sure the metadata is validated and packed into a uint256.
         uint256 _packedMetadata = _validateAndPackFundingCycleMetadata(
@@ -211,6 +221,8 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
             _reservedTokenSplits,
             true
         );
+
+        directory.setTerminalOf(_projectId, _terminal);
     }
 
     /**

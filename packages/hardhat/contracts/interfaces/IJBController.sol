@@ -81,6 +81,8 @@ interface IJBController {
 
     function splitsStore() external view returns (IJBSplitsStore);
 
+    function directory() external view returns (IJBDirectory);
+
     function fee() external view returns (uint256);
 
     function reservedTokenBalanceOf(uint256 _projectId, uint256 _reservedRate)
@@ -101,7 +103,8 @@ interface IJBController {
         FundingCycleMetadata calldata _metadata,
         OverflowAllowance[] memory _overflowAllowance,
         Split[] memory _payoutSplits,
-        Split[] memory _reservedTokenSplits
+        Split[] memory _reservedTokenSplits,
+        IJBTerminal _terminal
     ) external;
 
     function reconfigureFundingCyclesOf(

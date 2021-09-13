@@ -4,8 +4,6 @@ pragma solidity 0.8.6;
 import "./IJBDirectory.sol";
 
 interface IJBTerminal {
-    function directory() external view returns (IJBDirectory);
-
     function pay(
         uint256 _projectId,
         address _beneficiary,
