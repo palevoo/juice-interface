@@ -88,7 +88,7 @@ contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
             projects.ownerOf(_projectId),
             _projectId,
             Operations2.SetSplits,
-            address(directory.terminalOf(_projectId).dataAuthority())
+            address(directory.terminalOf(_projectId))
         )
     {
         // There must be something to do.

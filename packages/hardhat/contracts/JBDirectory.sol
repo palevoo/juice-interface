@@ -58,9 +58,9 @@ contract JBDirectory is IJBDirectory, JBOperatable {
         require(
             // case 1.
             (_currentTerminal == IJBTerminal(address(0)) &&
-                msg.sender == address(_terminal.dataAuthority())) ||
+                msg.sender == address(_terminal)) ||
                 // case 2.
-                msg.sender == address(_currentTerminal.dataAuthority()),
+                msg.sender == address(_currentTerminal),
             "JBDirectory::setTerminal: UNAUTHORIZED"
         );
 

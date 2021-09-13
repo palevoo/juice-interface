@@ -5,9 +5,13 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./IJBProjects.sol";
 import "./IJBDirectory.sol";
-import "./IJBETHPaymentTerminalData.sol";
 import "./IJBSplitsStore.sol";
 import "./IJBFundingCycleStore.sol";
+import "./IJBPayDelegate.sol";
+import "./IJBTokenStore.sol";
+import "./IJBPrices.sol";
+import "./IJBRedemptionDelegate.sol";
+import "./IJBController.sol";
 
 interface IJBETHPaymentTerminal {
     event AddToBalance(
@@ -74,18 +78,42 @@ interface IJBETHPaymentTerminal {
         uint256 amount,
         address caller
     );
-    event AllowBalanceTransfer(IJBTerminal terminal);
+
+    event DelegateDidPay(IJBPayDelegate indexed delegate, DidPayParam param);
+
+    event DelegateDidRedeem(
+        IJBRedemptionDelegate indexed delegate,
+        DidRedeemParam param
+    );
 
     function projects() external view returns (IJBProjects);
 
+    function fundingCycleStore() external view returns (IJBFundingCycleStore);
+
+    function tokenStore() external view returns (IJBTokenStore);
+
     function splitsStore() external view returns (IJBSplitsStore);
 
-    function data() external view returns (IJBETHPaymentTerminalData);
+    function prices() external view returns (IJBPrices);
 
-    function balanceTransferIsAllowedTo(IJBTerminal _terminal)
+    function jb() external view returns (IJBController);
+
+    function balanceOf(uint256 _projectId) external view returns (uint256);
+
+    function usedOverflowAllowanceOf(uint256 _projectId, uint256 _configuration)
         external
         view
-        returns (bool);
+        returns (uint256);
+
+    function currentOverflowOf(uint256 _projectId)
+        external
+        view
+        returns (uint256);
+
+    function claimableOverflowOf(uint256 _projectId, uint256 _tokenCount)
+        external
+        view
+        returns (uint256);
 
     function distributePayoutsOf(
         uint256 _projectId,
@@ -114,6 +142,4 @@ interface IJBETHPaymentTerminal {
     ) external returns (uint256 fundingCycleNumber);
 
     function transferBalanceOf(uint256 _projectId, IJBTerminal _to) external;
-
-    function allowBalanceTransferTo(IJBTerminal _contract) external;
 }
