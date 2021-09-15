@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.6;
 
-import "./libraries/Operations2.sol";
+import "./libraries/JBOperations.sol";
 
 // Inheritance
 import "./interfaces/IJBSplitsStore.sol";
@@ -87,7 +87,7 @@ contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
         requirePermissionAcceptingAlternateAddress(
             projects.ownerOf(_projectId),
             _projectId,
-            Operations2.SetSplits,
+            JBOperations.SetSplits,
             address(directory.terminalOf(_projectId))
         )
     {

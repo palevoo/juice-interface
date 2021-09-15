@@ -4,10 +4,9 @@ pragma solidity 0.8.6;
 import "@paulrberg/contracts/math/PRBMath.sol";
 import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 
-import "./libraries/Operations.sol";
-import "./libraries/Operations2.sol";
-import "./libraries/SplitsGroups.sol";
-import "./libraries/FundingCycleMetadataResolver.sol";
+import "./libraries/JBOperations.sol";
+import "./libraries/JBSplitsGroups.sol";
+import "./libraries/JBFundingCycleMetadataResolver.sol";
 
 // Inheritance
 import "./interfaces/IJBController.sol";
@@ -17,7 +16,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
     // A library that parses the packed funding cycle metadata into a more friendly format.
-    using FundingCycleMetadataResolver for FundingCycle;
+    using JBFundingCycleMetadataResolver for FundingCycle;
 
     //*********************************************************************//
     // --------------------- private stored properties ------------------- //
@@ -280,7 +279,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         requirePermission(
             projects.ownerOf(_projectId),
             _projectId,
-            Operations.Configure
+            JBOperations.Configure
         )
         returns (uint256)
     {
@@ -346,7 +345,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         requirePermission(
             projects.ownerOf(_projectId),
             _projectId,
-            Operations2.Mint
+            JBOperations.Mint
         )
     {
         // Can't send to the zero address.
@@ -430,7 +429,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         requirePermissionAllowingWildcardDomain(
             _holder,
             _projectId,
-            Operations2.Burn
+            JBOperations.Burn
         )
     {
         // There should be tokens to burn
@@ -623,7 +622,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
         Split[] memory _splits = splitsStore.get(
             _fundingCycle.projectId,
             _fundingCycle.configured,
-            SplitsGroups.ReservedTokens
+            JBSplitsGroups.ReservedTokens
         );
 
         //Transfer between all splits.
@@ -655,7 +654,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
             if (_split.allocator != IJBSplitAllocator(address(0)))
                 _split.allocator.allocate(
                     _tokenCount,
-                    SplitsGroups.ReservedTokens,
+                    JBSplitsGroups.ReservedTokens,
                     _fundingCycle.projectId,
                     _split.projectId,
                     _split.beneficiary,
@@ -766,7 +765,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
             splitsStore.set(
                 _projectId,
                 _fundingCycle.configured,
-                SplitsGroups.Payouts,
+                JBSplitsGroups.Payouts,
                 _payoutSplits
             );
 
@@ -775,7 +774,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
             splitsStore.set(
                 _projectId,
                 _fundingCycle.configured,
-                SplitsGroups.ReservedTokens,
+                JBSplitsGroups.ReservedTokens,
                 _reservedTokenSplits
             );
 

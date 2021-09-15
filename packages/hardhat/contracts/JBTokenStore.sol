@@ -5,7 +5,7 @@ import "./interfaces/IJBTokenStore.sol";
 import "./abstract/JBOperatable.sol";
 import "./abstract/JBTerminalUtility.sol";
 
-import "./libraries/Operations.sol";
+import "./libraries/JBOperations.sol";
 
 import "./JBToken.sol";
 
@@ -128,7 +128,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
         requirePermission(
             projects.ownerOf(_projectId),
             _projectId,
-            Operations.Issue
+            JBOperations.Issue
         )
         returns (IJBToken token)
     {
@@ -314,7 +314,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
         requirePermissionAllowingWildcardDomain(
             _holder,
             _projectId,
-            Operations.Stake
+            JBOperations.Stake
         )
     {
         // Get a reference to the project's ERC20 tokens.
@@ -372,7 +372,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
         requirePermissionAllowingWildcardDomain(
             _holder,
             _projectId,
-            Operations.Unstake
+            JBOperations.Unstake
         )
     {
         // Get a reference to the project's ERC20 tokens.
@@ -431,7 +431,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
         requirePermissionAllowingWildcardDomain(
             _holder,
             _projectId,
-            Operations.Lock
+            JBOperations.Lock
         )
     {
         // Amount must be greater than 0.
@@ -515,7 +515,7 @@ contract JBTokenStore is JBTerminalUtility, JBOperatable, IJBTokenStore {
         requirePermissionAllowingWildcardDomain(
             _holder,
             _projectId,
-            Operations.Transfer
+            JBOperations.Transfer
         )
     {
         // Can't transfer to the zero address.

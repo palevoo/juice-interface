@@ -5,16 +5,7 @@ import "./interfaces/IJBOperatorStore.sol";
 
 /** 
   @notice
-  Addresses can give permissions to any other address to take specific actions 
-  throughout the Juicebox ecosystem on their behalf. These addresses are called `operators`.
-  
-  @dev
-  Permissions are stored as a uint256, with each boolean bit representing whether or not
-  an oporator has the permission identified by that bit's index in the 256 bit uint256.
-  Indexes must be between 0 and 255.
-
-  The directory of permissions, along with how they uniquely mapp to indexes, are managed externally.
-  This contract doesn't know or care about specific permissions and their indexes.
+  Stores operator permissions for all addresses. Addresses can give permissions to any other address to take specific actions throughout the Juicebox ecosystem on their behalf.
 */
 contract JBOperatorStore is IJBOperatorStore {
     // --- public stored properties --- //
@@ -25,8 +16,10 @@ contract JBOperatorStore is IJBOperatorStore {
       
       @dev
       An account can give an operator permissions that only pertain to a specific domain.
-      There is no domain with an ID of 0 -- accounts can use the 0 domain to give an operator
-      permissions to operator on their personal behalf.
+      There is no domain with a value of 0 -- accounts can use the 0 domain to give an operator
+      permissions to all domains on their behalf.
+
+      [_operator][_account][_domain]
     */
     mapping(address => mapping(address => mapping(uint256 => uint256)))
         public
@@ -41,7 +34,7 @@ contract JBOperatorStore is IJBOperatorStore {
       @param _operator The operator to check.
       @param _account The account that has given out permission to the operator.
       @param _domain The domain that the operator has been given permissions to operate.
-      @param _permissionIndex the permission to check for.
+      @param _permissionIndex The permission to check for.
 
       @return Whether the operator has the specified permission.
     */
@@ -53,7 +46,7 @@ contract JBOperatorStore is IJBOperatorStore {
     ) external view override returns (bool) {
         require(
             _permissionIndex <= 255,
-            "OperatorStore::hasPermission: INDEX_OUT_OF_BOUNDS"
+            "JBOperatorStore::hasPermission: INDEX_OUT_OF_BOUNDS"
         );
         return
             ((permissionsOf[_operator][_account][_domain] >> _permissionIndex) &
@@ -82,7 +75,7 @@ contract JBOperatorStore is IJBOperatorStore {
 
             require(
                 _permissionIndex <= 255,
-                "OperatorStore::hasPermissions: INDEX_OUT_OF_BOUNDS"
+                "JBOperatorStore::hasPermissions: INDEX_OUT_OF_BOUNDS"
             );
 
             if (
@@ -99,9 +92,12 @@ contract JBOperatorStore is IJBOperatorStore {
       @notice 
       Sets permissions for an operator.
 
-      @param _operator The operator to give permission to.
-      @param _domain The domain that the operator is being given permissions to operate.
-      @param _permissionIndexes An array of indexes of permissions to set.
+      @dev
+      Only an address can set its own operators.
+
+      @param _operator The operator to whom permissions will be given.
+      @param _domain The domain that the operator is being given permissions to operate. A value of 0 serves as a wildcard domain. Applications can specify their own domain system.
+      @param _permissionIndexes An array of permission indexes to set. Indexes must be between 0-255. Applications can specify the significance of each index.
     */
     function setOperator(
         address _operator,
@@ -127,9 +123,15 @@ contract JBOperatorStore is IJBOperatorStore {
       @notice 
       Sets permissions for many operators.
 
-      @param _operators The operators to give permission to.
-      @param _domains The domains that can be operated. Set to 0 to allow operation of account level actions.
-      @param _permissionIndexes The level of power each operator should have.
+      @dev
+      Only an address can set its own operators.
+
+      @dev
+      Each element of each provided array should matches up, so each array must be of the same length. 
+
+      @param _operators The operators to whom permissions will be given.
+      @param _domains Lists the domain that each operator is being given permissions to operate. A value of 0 serves as a wildcard domain. Applications can specify their own domain system.
+      @param _permissionIndexes Lists the permission indexes to set for each operator. Indexes must be between 0-255. Applications can specify the significance of each index.
     */
     function setOperators(
         address[] calldata _operators,
@@ -142,11 +144,14 @@ contract JBOperatorStore is IJBOperatorStore {
                 _operators.length == _domains.length,
             "OperatorStore::setOperators: BAD_ARGS"
         );
+
         for (uint256 _i = 0; _i < _operators.length; _i++) {
             // Pack the indexes into a uint256.
             uint256 _packed = _packedPermissions(_permissionIndexes[_i]);
+
             // Store the new value.
             permissionsOf[_operators[_i]][msg.sender][_domains[_i]] = _packed;
+
             emit SetOperator(
                 _operators[_i],
                 msg.sender,
@@ -161,7 +166,7 @@ contract JBOperatorStore is IJBOperatorStore {
 
     /** 
       @notice 
-      Converts an array of permission indexes to a packed int.
+      Converts an array of permission indexes to a packed uint256.
 
       @param _indexes The indexes of the permissions to pack.
 
@@ -173,13 +178,13 @@ contract JBOperatorStore is IJBOperatorStore {
         returns (uint256 packed)
     {
         for (uint256 _i = 0; _i < _indexes.length; _i++) {
-            uint256 _permissionIndex = _indexes[_i];
+            uint256 _index = _indexes[_i];
             require(
-                _permissionIndex <= 255,
-                "OperatorStore::_packedPermissions: INDEX_OUT_OF_BOUNDS"
+                _index <= 255,
+                "JBOperatorStore::_packedPermissions: INDEX_OUT_OF_BOUNDS"
             );
             // Turn the bit at the index on.
-            packed |= 1 << _permissionIndex;
+            packed |= 1 << _index;
         }
     }
 }

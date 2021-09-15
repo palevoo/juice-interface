@@ -4,7 +4,7 @@ pragma solidity 0.8.6;
 import "./../interfaces/IJBFundingCycleStore.sol";
 import "./../interfaces/IJBFundingCycleDataSource.sol";
 
-library FundingCycleMetadataResolver {
+library JBFundingCycleMetadataResolver {
     function reservedRate(FundingCycle memory _fundingCycle)
         internal
         pure

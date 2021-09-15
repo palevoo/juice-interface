@@ -3,13 +3,7 @@ pragma solidity 0.8.6;
 
 import "./interfaces/IJBTerminal.sol";
 import "./interfaces/IJBDirectory.sol";
-import "./interfaces/IProjects.sol";
-
 import "./abstract/JBOperatable.sol";
-
-import "./libraries/Operations.sol";
-
-import "./DirectPaymentAddress.sol";
 
 /**
   @notice

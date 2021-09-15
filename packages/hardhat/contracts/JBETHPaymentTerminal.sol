@@ -5,10 +5,10 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@paulrberg/contracts/math/PRBMathUD60x18.sol";
 import "@paulrberg/contracts/math/PRBMath.sol";
 
-import "./libraries/Operations.sol";
-import "./libraries/Operations2.sol";
-import "./libraries/SplitsGroups.sol";
-import "./libraries/FundingCycleMetadataResolver.sol";
+import "./libraries/JBCurrencies.sol";
+import "./libraries/JBOperations.sol";
+import "./libraries/JBSplitsGroups.sol";
+import "./libraries/JBFundingCycleMetadataResolver.sol";
 
 // Inheritance
 import "./interfaces/IJBETHPaymentTerminal.sol";
@@ -38,7 +38,7 @@ contract JBETHPaymentTerminal is
     ReentrancyGuard
 {
     // A library that parses the packed funding cycle metadata into a more friendly format.
-    using FundingCycleMetadataResolver for FundingCycle;
+    using JBFundingCycleMetadataResolver for FundingCycle;
 
     //*********************************************************************//
     // ---------------- public immutable stored properties --------------- //
@@ -343,7 +343,7 @@ contract JBETHPaymentTerminal is
         requirePermission(
             projects.ownerOf(_projectId),
             _projectId,
-            Operations2.UseAllowance
+            JBOperations.UseAllowance
         )
         returns (uint256)
     {
@@ -431,7 +431,7 @@ contract JBETHPaymentTerminal is
         requirePermissionAllowingWildcardDomain(
             _holder,
             _projectId,
-            Operations.Redeem
+            JBOperations.Redeem
         )
         returns (uint256 claimAmount)
     {
@@ -489,7 +489,7 @@ contract JBETHPaymentTerminal is
         requirePermission(
             projects.ownerOf(_projectId),
             _projectId,
-            Operations.Migrate
+            JBOperations.Migrate
         )
     {
         // The data layer must be the project's current terminal.
@@ -559,7 +559,7 @@ contract JBETHPaymentTerminal is
         Split[] memory _splits = splitsStore.get(
             _fundingCycle.projectId,
             _fundingCycle.configured,
-            SplitsGroups.Payouts
+            JBSplitsGroups.Payouts
         );
 
         // If there are no splits, return the full leftover amount.
@@ -583,7 +583,7 @@ contract JBETHPaymentTerminal is
                 if (_split.allocator != IJBSplitAllocator(address(0))) {
                     _split.allocator.allocate{value: _payoutAmount}(
                         _payoutAmount,
-                        SplitsGroups.Payouts,
+                        JBSplitsGroups.Payouts,
                         _fundingCycle.projectId,
                         _split.projectId,
                         _split.beneficiary,
@@ -912,7 +912,7 @@ contract JBETHPaymentTerminal is
         // Convert the amount to wei.
         withdrawnAmount = PRBMathUD60x18.div(
             _amount,
-            prices.getETHPriceFor(fundingCycle.currency)
+            prices.getPriceFor(fundingCycle.currency, JBCurrencies.ETH)
         );
 
         // The amount being withdrawn must be at least as much as was expected.
@@ -962,7 +962,7 @@ contract JBETHPaymentTerminal is
         // Convert the amount to wei.
         withdrawnAmount = PRBMathUD60x18.div(
             _amount,
-            prices.getETHPriceFor(fundingCycle.currency)
+            prices.getPriceFor(fundingCycle.currency, JBCurrencies.ETH)
         );
 
         // There must be sufficient allowance available.
@@ -1244,7 +1244,7 @@ contract JBETHPaymentTerminal is
             ? 0 // Get the current price of ETH.
             : PRBMathUD60x18.div(
                 _limit,
-                prices.getETHPriceFor(_fundingCycle.currency)
+                prices.getPriceFor(_fundingCycle.currency, JBCurrencies.ETH)
             );
 
         // Overflow is the balance of this project minus the amount that can still be withdrawn.

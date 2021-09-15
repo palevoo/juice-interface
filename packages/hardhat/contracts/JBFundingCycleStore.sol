@@ -4,7 +4,6 @@ pragma solidity >=0.8.0;
 import "@paulrberg/contracts/math/PRBMath.sol";
 
 import "./interfaces/IJBFundingCycleStore.sol";
-import "./interfaces/IPrices.sol";
 import "./abstract/JBTerminalUtility.sol";
 
 /** 
