@@ -6,22 +6,35 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/IJBPrices.sol";
 
 /** 
-  @notice Manage and normalizes ETH price feeds.
+  @notice Manages and normalizes price feeds.
 */
 contract JBPrices is IJBPrices, Ownable {
     // --- public constant stored properties --- //
 
-    /// @notice The target number of decimals the price feed results have.
+    /** 
+      @notice 
+      The normalized number of decimals each price feed has.
+    */
     uint256 public constant override targetDecimals = 18;
 
     // --- public stored properties --- //
 
-    /// @notice The number to multiply each price feed by to get to the target decimals.
+    /** 
+      @notice 
+      The number to multiply each price feed by to get to the target decimals.
+
+      [_currency][_base]
+    */
     mapping(uint256 => mapping(uint256 => uint256))
         public
-        override feedDecimalAdjuster;
+        override feedDecimalAdjusterFor;
 
-    /// @notice The available price feeds that can be used to get the price of ETH.
+    /** 
+      @notice 
+      The available price feeds.
+
+      [_currency][_base]
+    */
     mapping(uint256 => mapping(uint256 => AggregatorV3Interface))
         public
         override feedFor;
@@ -30,19 +43,20 @@ contract JBPrices is IJBPrices, Ownable {
 
     /** 
       @notice 
-      Gets the current price of ETH for the provided currency.
+      Gets the current price of the provided currency in terms of the provided base currency.
       
       @param _currency The currency to get a price for.
+      @param _base The currency to base the price on.
       
-      @return price The price of ETH with 18 decimals.
+      @return The price of the currency in terms of the base, with 18 decimals.
     */
-    function getPriceFor(uint256 _currency, uint256 _base)
+    function priceFor(uint256 _currency, uint256 _base)
         external
         view
         override
         returns (uint256)
     {
-        // The currency is the base, return 1.
+        // If the currency is the base, return 1 since they are priced the same.
         if (_currency == _base) return 10**targetDecimals;
 
         // Get a reference to the feed.
@@ -51,14 +65,14 @@ contract JBPrices is IJBPrices, Ownable {
         // Feed must exist.
         require(
             _feed != AggregatorV3Interface(address(0)),
-            "Prices::getETHPrice: NOT_FOUND"
+            "JBPrices::priceFor: NOT_FOUND"
         );
 
         // Get the latest round information. Only need the price is needed.
         (, int256 _price, , , ) = _feed.latestRoundData();
 
         // Multiply the price by the decimal adjuster to get the normalized result.
-        return uint256(_price) * feedDecimalAdjuster[_currency][_base];
+        return uint256(_price) * feedDecimalAdjusterFor[_currency][_base];
     }
 
     // --- external transactions --- //
@@ -82,7 +96,7 @@ contract JBPrices is IJBPrices, Ownable {
         // There can't already be a feed for the specified currency.
         require(
             feedFor[_currency][_base] == AggregatorV3Interface(address(0)),
-            "Prices::addFeedFor: ALREADY_EXISTS"
+            "JBPrices::addFeedFor: ALREADY_EXISTS"
         );
 
         // Get a reference to the number of decimals the feed uses.
@@ -91,14 +105,14 @@ contract JBPrices is IJBPrices, Ownable {
         // Decimals should be less than or equal to the target number of decimals.
         require(
             _decimals <= targetDecimals,
-            "Prices::addFeedFor: BAD_DECIMALS"
+            "JBPrices::addFeedFor: BAD_DECIMALS"
         );
 
         // Set the feed.
         feedFor[_currency][_base] = _feed;
 
         // Set the decimal adjuster for the currency.
-        feedDecimalAdjuster[_currency][_base] =
+        feedDecimalAdjusterFor[_currency][_base] =
             10**(targetDecimals - _decimals);
 
         emit AddFeed(_currency, _base, _decimals, _feed);

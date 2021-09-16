@@ -28,20 +28,20 @@ contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
 
     /**
       @notice 
-      Get all splits for the specified project ID.
+      Get all splits for the specified project ID, within the specified domain, for the specified group.
 
       @param _projectId The ID of the project to get splits for.
-      @param _configuration The configuration to get splits for.
+      @param _domain An identifier within which the returned splits should be considered active.
       @param _group The identifying group of the splits.
 
       @return An array of all splits for the project.
      */
-    function get(
+    function splitsOf(
         uint256 _projectId,
-        uint256 _configuration,
+        uint256 _domain,
         uint256 _group
     ) external view override returns (Split[] memory) {
-        return _splitsOf[_projectId][_configuration][_group];
+        return _splitsOf[_projectId][_domain][_group];
     }
 
     // --- constructor --- //
@@ -63,7 +63,7 @@ contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
 
     /** 
       @notice 
-      Sets the splits.
+      Sets a project's splits.
 
       @dev
       Only the owner or operator of a project, or the current terminal of the project, can set its splits.
@@ -71,14 +71,14 @@ contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
       @dev
       The new splits must include any currently set splits that are locked.
 
-      @param _projectId The ID of the project to add splits to.
-      @param _configuration The funding cycle configuration to set the splits to be active during.
-      @param _group The group of splits being set.
+      @param _projectId The ID of the project for which splits are being added.
+      @param _domain An identifier within which the splits should be considered active.
+      @param _group An identifier between of splits being set. All splits within this _group must add up to within 100%.
       @param _splits The splits to set.
     */
     function set(
         uint256 _projectId,
-        uint256 _configuration,
+        uint256 _domain,
         uint256 _group,
         Split[] memory _splits
     )
@@ -91,37 +91,29 @@ contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
             address(directory.terminalOf(_projectId))
         )
     {
-        // There must be something to do.
-        require(_splits.length > 0, "JBSplitsStore::set: NO_OP");
-
         // Get a reference to the project's current splits.
-        Split[] memory _currentSplits = _splitsOf[_projectId][_configuration][
-            _group
-        ];
+        Split[] memory _currentSplits = _splitsOf[_projectId][_domain][_group];
 
         // Check to see if all locked splits are included.
         for (uint256 _i = 0; _i < _currentSplits.length; _i++) {
-            if (block.timestamp < _currentSplits[_i].lockedUntil) {
-                bool _includesLocked = false;
-                for (uint256 _j = 0; _j < _splits.length; _j++) {
-                    // Check for sameness.
-                    if (
-                        _splits[_j].percent == _currentSplits[_i].percent &&
-                        _splits[_j].beneficiary ==
-                        _currentSplits[_i].beneficiary &&
-                        _splits[_j].allocator == _currentSplits[_i].allocator &&
-                        _splits[_j].projectId == _currentSplits[_i].projectId &&
-                        // Allow lock extention.
-                        _splits[_j].lockedUntil >=
-                        _currentSplits[_i].lockedUntil
-                    ) _includesLocked = true;
-                }
-                require(_includesLocked, "JBSplitsStore::set: SOME_LOCKED");
+            if (block.timestamp >= _currentSplits[_i].lockedUntil) continue;
+            bool _includesLocked = false;
+            for (uint256 _j = 0; _j < _splits.length; _j++) {
+                // Check for sameness.
+                if (
+                    _splits[_j].percent == _currentSplits[_i].percent &&
+                    _splits[_j].beneficiary == _currentSplits[_i].beneficiary &&
+                    _splits[_j].allocator == _currentSplits[_i].allocator &&
+                    _splits[_j].projectId == _currentSplits[_i].projectId &&
+                    // Allow lock extention.
+                    _splits[_j].lockedUntil >= _currentSplits[_i].lockedUntil
+                ) _includesLocked = true;
             }
+            require(_includesLocked, "JBSplitsStore::set: SOME_LOCKED");
         }
 
         // Delete from storage so splits can be repopulated.
-        delete _splitsOf[_projectId][_configuration][_group];
+        delete _splitsOf[_projectId][_domain][_group];
 
         // Add up all the percents to make sure they cumulative are under 100%.
         uint256 _percentTotal = 0;
@@ -149,15 +141,9 @@ contract JBSplitsStore is IJBSplitsStore, JBOperatable, JBTerminalUtility {
                 "JBSplitsStore::set: BAD_TOTAL_PERCENT"
             );
             // Push the new split into the project's list of splits.
-            _splitsOf[_projectId][_configuration][_group].push(_splits[_i]);
+            _splitsOf[_projectId][_domain][_group].push(_splits[_i]);
 
-            emit SetSplit(
-                _projectId,
-                _configuration,
-                _group,
-                _splits[_i],
-                msg.sender
-            );
+            emit SetSplit(_projectId, _domain, _group, _splits[_i], msg.sender);
         }
     }
 }

@@ -17,7 +17,7 @@ struct Split {
 interface IJBSplitsStore {
     event SetSplit(
         uint256 indexed projectId,
-        uint256 indexed configuration,
+        uint256 indexed domain,
         uint256 indexed group,
         Split split,
         address caller
@@ -25,15 +25,15 @@ interface IJBSplitsStore {
 
     function projects() external view returns (IJBProjects);
 
-    function get(
+    function splitsOf(
         uint256 _projectId,
-        uint256 _configuration,
+        uint256 _domain,
         uint256 _group
     ) external view returns (Split[] memory);
 
     function set(
         uint256 _projectId,
-        uint256 _configuration,
+        uint256 _domain,
         uint256 _group,
         Split[] memory _splits
     ) external;

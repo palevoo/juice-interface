@@ -556,7 +556,7 @@ contract JBETHPaymentTerminal is
         leftoverAmount = _amount;
 
         // Get a reference to the project's payout splits.
-        Split[] memory _splits = splitsStore.get(
+        Split[] memory _splits = splitsStore.splitsOf(
             _fundingCycle.projectId,
             _fundingCycle.configured,
             JBSplitsGroups.Payouts
@@ -912,7 +912,7 @@ contract JBETHPaymentTerminal is
         // Convert the amount to wei.
         withdrawnAmount = PRBMathUD60x18.div(
             _amount,
-            prices.getPriceFor(fundingCycle.currency, JBCurrencies.ETH)
+            prices.priceFor(fundingCycle.currency, JBCurrencies.ETH)
         );
 
         // The amount being withdrawn must be at least as much as was expected.
@@ -962,7 +962,7 @@ contract JBETHPaymentTerminal is
         // Convert the amount to wei.
         withdrawnAmount = PRBMathUD60x18.div(
             _amount,
-            prices.getPriceFor(fundingCycle.currency, JBCurrencies.ETH)
+            prices.priceFor(fundingCycle.currency, JBCurrencies.ETH)
         );
 
         // There must be sufficient allowance available.
@@ -1244,7 +1244,7 @@ contract JBETHPaymentTerminal is
             ? 0 // Get the current price of ETH.
             : PRBMathUD60x18.div(
                 _limit,
-                prices.getPriceFor(_fundingCycle.currency, JBCurrencies.ETH)
+                prices.priceFor(_fundingCycle.currency, JBCurrencies.ETH)
             );
 
         // Overflow is the balance of this project minus the amount that can still be withdrawn.

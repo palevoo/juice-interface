@@ -13,7 +13,7 @@ interface IJBPrices {
 
     function targetDecimals() external returns (uint256);
 
-    function feedDecimalAdjuster(uint256 _currency, uint256 _base)
+    function feedDecimalAdjusterFor(uint256 _currency, uint256 _base)
         external
         returns (uint256);
 
@@ -21,7 +21,7 @@ interface IJBPrices {
         external
         returns (AggregatorV3Interface);
 
-    function getPriceFor(uint256 _currency, uint256 _base)
+    function priceFor(uint256 _currency, uint256 _base)
         external
         view
         returns (uint256);

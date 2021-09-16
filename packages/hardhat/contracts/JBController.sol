@@ -619,7 +619,7 @@ contract JBController is IJBController, JBOperatable, Ownable, ReentrancyGuard {
 
         // TODO: changing _splits to "_receipients" or ... ?
         // Get a reference to the project's reserved token splits.
-        Split[] memory _splits = splitsStore.get(
+        Split[] memory _splits = splitsStore.splitsOf(
             _fundingCycle.projectId,
             _fundingCycle.configured,
             JBSplitsGroups.ReservedTokens
