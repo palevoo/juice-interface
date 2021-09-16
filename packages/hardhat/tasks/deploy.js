@@ -13,30 +13,15 @@ const juice = require("../scripts/utils");
  *   --ticker JBXPROXY \
  *   --network rinkeby
  */
-task(
-  "deployTokenRepresentationProxy",
-  "Deploys the TokenRepresentationProxy contract"
-)
-  .addParam("ticketbooth", "TicketBooth address")
-  .addParam("projectid", "Project ID")
-  .addParam("name", "ERC20 token name")
-  .addParam("ticker", "ERC20 ticker symbol")
-  .setAction(async (taskArgs) => {
-    const contract = "TokenRepresentationProxy";
+task("deployBanny", "Deploys the Banny contract").setAction(
+  async (taskArgs) => {
+    const contract = "Banny";
     console.log(
       `Deploying `,
       chalk.magenta(contract),
       `with the following params: `
     );
-    console.log("TicketBooth: ", chalk.green(taskArgs.ticketbooth));
-    console.log("ProjectId: ", chalk.green(taskArgs.projectid));
-    console.log("erc20Name: ", chalk.green(taskArgs.name));
-    console.log("erc20Ticker: ", chalk.green(taskArgs.ticker));
-    await juice.deploy(contract, [
-      taskArgs.ticketbooth,
-      taskArgs.projectid,
-      taskArgs.name,
-      taskArgs.ticker,
-    ]);
+    await juice.deploy(contract, []);
     console.log(`Successfully deployed `, chalk.magenta(contract));
-  });
+  }
+);

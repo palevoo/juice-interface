@@ -46,7 +46,6 @@ module.exports = {
     },
     mainnet: {
       url: "https://mainnet.infura.io/v3/" + infuraId,
-      gasPrice: 50000000000,
       accounts: {
         mnemonic: mnemonic(),
       },
